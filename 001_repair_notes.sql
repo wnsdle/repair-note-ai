@@ -20,6 +20,10 @@ create table if not exists public.repair_notes (
   updated_at timestamptz not null default now()
 );
 
+-- 이미 테이블이 먼저 만들어진 경우에도 검색 열을 보장합니다.
+alter table public.repair_notes
+  add column if not exists search_text text not null default '';
+
 create table if not exists public.repair_note_photos (
   id uuid primary key default gen_random_uuid(),
   repair_note_id uuid not null references public.repair_notes(id) on delete cascade,
