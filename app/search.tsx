@@ -1,3 +1,4 @@
+
 "use client";
 
 // 검색 화면은 app/page.tsx에 통합되어 있습니다.
