@@ -9,9 +9,7 @@ function clean(value: unknown) {
 
 /**
  * 경고등/진단코드 입력을 배열로 변환합니다.
- * 줄바꿈(\n) 또는 쉼표(,)로 구분해서 입력하면 여러 개로 나뉩니다.
- * 예: "P008700 연료 레일 압력 낮음, B00011B 스티어링 진단" 
- *   -> ["P008700 연료 레일 압력 낮음", "B00011B 스티어링 진단"]
+ * 줄바꿈(엔터)으로 구분해서 여러 줄 입력하면 각 줄이 하나의 항목이 됩니다.
  */
 function parseDtcCodes(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -19,7 +17,7 @@ function parseDtcCodes(value: unknown): string[] {
   }
   if (typeof value !== "string") return [];
   return value
-    .split(/[\n,]/)
+    .split("\n")
     .map((v) => v.trim())
     .filter(Boolean);
 }
@@ -58,31 +56,24 @@ export async function POST(request: Request) {
     const dtcCodes = parseDtcCodes(body.errorCodes);
 
     const note = {
-      vehicle_model: clean(body.vehicleName) || clean(body.model),
-      manufacturer: clean(body.manufacturer),
-      model: clean(body.model),
+      vehicle_type: clean(body.vehicleType),
+      model_year: clean(body.modelYear),
       mileage_or_hours: clean(body.mileage),
+      order_id: clean(body.orderId),
+      plate_number: clean(body.plateNumber),
       symptom,
       dtc_codes: dtcCodes,
       inspection: clean(body.inspection),
       cause: clean(body.rootCause),
-      resolution: clean(body.repairAction),
-      parts_used: clean(body.partsUsed),
-      result: clean(body.result),
-      is_resolved: Boolean(body.isResolved),
-      tags: clean(body.tags),
+      // 검색용 태그는 사용자가 입력하지 않아도, 아래 값들을 자동으로 모아서 생성합니다.
       search_text: [
-        clean(body.vehicleName),
-        clean(body.manufacturer),
-        clean(body.model),
+        clean(body.vehicleType),
+        clean(body.plateNumber),
+        clean(body.orderId),
         symptom,
         dtcCodes.join(" "),
         clean(body.inspection),
-        clean(body.rootCause),
-        clean(body.repairAction),
-        clean(body.partsUsed),
-        clean(body.result),
-        clean(body.tags)
+        clean(body.rootCause)
       ]
         .filter(Boolean)
         .join(" ")
