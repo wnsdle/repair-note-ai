@@ -18,25 +18,24 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseAdmin();
     const pattern = `%${query}%`;
+
+    // search_text 안에 증상/경고등/차량번호/오더번호/점검내용/원인이 전부 합쳐져 저장되어 있어서
+    // 이 한 칸만 검색해도 사실상 전체 항목을 검색하는 효과가 있습니다.
+    // dtc_codes는 배열이라 별도로 contains 조건도 함께 확인합니다 (정확한 코드로 검색할 때 대비).
     const { data, error } = await supabase
       .from("repair_notes")
       .select("*")
       .or(
         [
-          `vehicle_name.ilike.${pattern}`,
-          `manufacturer.ilike.${pattern}`,
-          `model.ilike.${pattern}`,
+          `search_text.ilike.${pattern}`,
+          `vehicle_type.ilike.${pattern}`,
+          `plate_number.ilike.${pattern}`,
+          `order_id.ilike.${pattern}`,
           `symptom.ilike.${pattern}`,
-          `error_codes.ilike.${pattern}`,
           `inspection.ilike.${pattern}`,
-          `root_cause.ilike.${pattern}`,
-          `repair_action.ilike.${pattern}`,
-          `parts_used.ilike.${pattern}`,
-          `result.ilike.${pattern}`,
-          `tags.ilike.${pattern}`
+          `cause.ilike.${pattern}`
         ].join(",")
       )
-      .order("is_resolved", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(50);
 
