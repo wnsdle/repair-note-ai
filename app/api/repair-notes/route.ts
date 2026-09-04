@@ -7,6 +7,23 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/**
+ * 경고등/진단코드 입력을 배열로 변환합니다.
+ * 줄바꿈(\n) 또는 쉼표(,)로 구분해서 입력하면 여러 개로 나뉩니다.
+ * 예: "P008700 연료 레일 압력 낮음, B00011B 스티어링 진단" 
+ *   -> ["P008700 연료 레일 압력 낮음", "B00011B 스티어링 진단"]
+ */
+function parseDtcCodes(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v).trim()).filter(Boolean);
+  }
+  if (typeof value !== "string") return [];
+  return value
+    .split(/[\n,]/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
@@ -38,16 +55,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const dtcCodes = parseDtcCodes(body.errorCodes);
+
     const note = {
-      vehicle_name: clean(body.vehicleName),
+      vehicle_model: clean(body.vehicleName) || clean(body.model),
       manufacturer: clean(body.manufacturer),
       model: clean(body.model),
       mileage_or_hours: clean(body.mileage),
       symptom,
-      error_codes: clean(body.errorCodes),
+      dtc_codes: dtcCodes,
       inspection: clean(body.inspection),
-      root_cause: clean(body.rootCause),
-      repair_action: clean(body.repairAction),
+      cause: clean(body.rootCause),
+      resolution: clean(body.repairAction),
       parts_used: clean(body.partsUsed),
       result: clean(body.result),
       is_resolved: Boolean(body.isResolved),
@@ -57,7 +76,7 @@ export async function POST(request: Request) {
         clean(body.manufacturer),
         clean(body.model),
         symptom,
-        clean(body.errorCodes),
+        dtcCodes.join(" "),
         clean(body.inspection),
         clean(body.rootCause),
         clean(body.repairAction),
