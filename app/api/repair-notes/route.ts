@@ -25,14 +25,43 @@ function parseDtcCodes(value: unknown): string[] {
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    const { data: notesData, error } = await supabase
       .from("repair_notes")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(100);
 
     if (error) throw error;
-    return NextResponse.json({ data });
+
+    const notes = notesData || [];
+    const noteIds = notes.map((n) => n.id);
+
+    // 사진은 별도 테이블에서 한 번에 모아 가져온 뒤, 각 기록에 붙여줍니다.
+    // 원본 사진 파일은 서버를 거치지 않고, 구글드라이브가 제공하는 썸네일/보기 주소만 사용합니다.
+    let photosByNote: Record<string, { id: string; thumbnailLink: string; webViewLink: string; fileName: string }[]> = {};
+    if (noteIds.length > 0) {
+      const { data: photos, error: photoError } = await supabase
+        .from("repair_note_photos")
+        .select("id, repair_note_id, thumbnail_link, web_view_link, file_name")
+        .in("repair_note_id", noteIds);
+
+      if (!photoError && photos) {
+        for (const p of photos) {
+          const key = p.repair_note_id as string;
+          if (!photosByNote[key]) photosByNote[key] = [];
+          photosByNote[key].push({
+            id: p.id,
+            thumbnailLink: p.thumbnail_link,
+            webViewLink: p.web_view_link,
+            fileName: p.file_name
+          });
+        }
+      }
+    }
+
+    const withPhotos = notes.map((n) => ({ ...n, photos: photosByNote[n.id] || [] }));
+
+    return NextResponse.json({ data: withPhotos });
   } catch (error) {
     console.error("GET /api/repair-notes", error);
     return NextResponse.json(
