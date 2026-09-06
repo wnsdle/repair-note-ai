@@ -147,10 +147,18 @@ export default function Home() {
         if (photoResponse.ok) {
           uploaded += 1;
         } else {
-          failed.push(file.name);
+          let reason = `HTTP ${photoResponse.status}`;
+          try {
+            const errJson = await photoResponse.json();
+            if (errJson?.error) reason = errJson.error;
+          } catch {
+            // 응답이 JSON이 아니면 상태 코드만 사용
+          }
+          failed.push(`${file.name} (${reason})`);
         }
-      } catch {
-        failed.push(file.name);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        failed.push(`${file.name} (브라우저 오류: ${message})`);
       }
     }
 
