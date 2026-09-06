@@ -2,6 +2,13 @@
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 
+type Photo = {
+  id: string;
+  thumbnailLink: string;
+  webViewLink: string;
+  fileName: string;
+};
+
 type Note = {
   id: string;
   vehicle_type: string;
@@ -14,6 +21,7 @@ type Note = {
   inspection: string;
   cause: string;
   created_at: string;
+  photos?: Photo[];
 };
 
 const initialForm = {
@@ -38,6 +46,15 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [orderLookupLoading, setOrderLookupLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<{ symptoms: string[]; dtcCodes: string[] }>({ symptoms: [], dtcCodes: [] });
+  const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/suggestions")
+      .then((res) => res.json())
+      .then((json) => setSuggestions({ symptoms: json.symptoms || [], dtcCodes: json.dtcCodes || [] }))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (tab === "history") loadNotes();
@@ -101,6 +118,7 @@ export default function Home() {
     event.preventDefault();
     setLoading(true);
     setStatus("정비 기록을 저장하는 중입니다...");
+    setFailedPhotos([]);
 
     const response = await fetch("/api/repair-notes", {
       method: "POST",
@@ -116,25 +134,47 @@ export default function Home() {
     }
 
     let uploaded = 0;
+    const failed: string[] = [];
     for (const file of photos) {
-      const photoData = new FormData();
-      photoData.append("noteId", json.data.id);
-      photoData.append("file", file);
-      const photoResponse = await fetch("/api/photos/upload", {
-        method: "POST",
-        body: photoData
-      });
-      if (photoResponse.ok) uploaded += 1;
+      try {
+        const photoData = new FormData();
+        photoData.append("noteId", json.data.id);
+        photoData.append("file", file);
+        const photoResponse = await fetch("/api/photos/upload", {
+          method: "POST",
+          body: photoData
+        });
+        if (photoResponse.ok) {
+          uploaded += 1;
+        } else {
+          failed.push(file.name);
+        }
+      } catch {
+        failed.push(file.name);
+      }
     }
 
     setForm(initialForm);
     setPhotos([]);
     setLoading(false);
-    setStatus(
-      uploaded
-        ? `저장되었습니다. 사진 ${uploaded}장도 Google Drive에 올렸습니다.`
-        : "저장되었습니다."
-    );
+    setFailedPhotos(failed);
+
+    if (failed.length > 0) {
+      setStatus(
+        `정비 기록은 저장되었지만, 사진 ${failed.length}장 업로드에 실패했습니다. 아래 사진은 휴대폰에서 삭제하지 마세요.`
+      );
+    } else {
+      setStatus(
+        uploaded
+          ? `저장되었습니다. 사진 ${uploaded}장도 Google Drive에 올렸습니다.`
+          : "저장되었습니다."
+      );
+    }
+
+    fetch("/api/suggestions")
+      .then((res) => res.json())
+      .then((j) => setSuggestions({ symptoms: j.symptoms || [], dtcCodes: j.dtcCodes || [] }))
+      .catch(() => {});
   }
 
   async function searchNotes(event: FormEvent) {
@@ -185,6 +225,14 @@ export default function Home() {
       <section className="content">
         {status && <div className={`status ${status.includes("못") || status.includes("오류") ? "error" : ""}`}>{status}</div>}
 
+        {failedPhotos.length > 0 && (
+          <div className="status error photo-fail-warning">
+            ⚠️ 업로드 실패한 사진: {failedPhotos.join(", ")}
+            <br />
+            이 사진들은 Google Drive에 저장되지 않았습니다. <strong>휴대폰에서 원본을 삭제하지 마시고</strong>, 잠시 후 정비 기록 수정 화면에서 다시 업로드해주세요.
+          </div>
+        )}
+
         {tab === "record" && (
           <form className="card" onSubmit={saveNote}>
             <h2 className="section-title">정비 경험 기록</h2>
@@ -211,25 +259,27 @@ export default function Home() {
               <Field label="차량형식" name="vehicleType" value={form.vehicleType} onChange={updateForm} placeholder="예: FM 460" />
               <Field label="연식" name="modelYear" value={form.modelYear} onChange={updateForm} placeholder="예: 2021" />
               <Field label="주행거리 / 사용시간" name="mileage" value={form.mileage} onChange={updateForm} placeholder="예: 384,000 km" />
-              <Field
+              <SuggestField
                 full
                 label="증상 *"
                 name="symptom"
                 value={form.symptom}
                 onChange={updateForm}
                 onKeyDown={allowNewline}
-                multiline
                 placeholder="예: 공회전에서 RPM 헌팅이 발생함"
+                suggestions={suggestions.symptoms}
+                mode="replace"
               />
-              <Field
+              <SuggestField
                 full
                 label="경고등 / 진단코드"
                 name="errorCodes"
                 value={form.errorCodes}
                 onChange={updateForm}
                 onKeyDown={allowNewline}
-                multiline
                 placeholder={"엔터로 줄바꿈해서 여러 개 입력 가능합니다.\n예: P008700 연료 레일 압력 낮음\nB00011B 스티어링 진단 오류"}
+                suggestions={suggestions.dtcCodes}
+                mode="append-line"
               />
               <Field
                 full
@@ -324,7 +374,80 @@ function Field({
   );
 }
 
-function NoteCard({ note }: { note: Note }) {
+/**
+ * 여러 줄 입력창 + 자동완성 목록.
+ * mode="replace": 후보를 클릭하면 전체 내용을 그 후보로 바꿈 (증상용)
+ * mode="append-line": 후보를 클릭하면 새 줄로 추가함 (경고등처럼 여러 개 누적하는 항목용)
+ */
+function SuggestField({
+  label,
+  name,
+  value,
+  onChange,
+  onKeyDown,
+  placeholder,
+  suggestions,
+  mode,
+  full = false
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  suggestions: string[];
+  mode: "replace" | "append-line";
+  full?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const lastLine = value.split("\n").pop() || "";
+  const queryText = (mode === "append-line" ? lastLine : value).trim().toLowerCase();
+
+  const matches =
+    queryText.length > 0
+      ? suggestions.filter((s) => s.toLowerCase().includes(queryText) && s.toLowerCase() !== queryText).slice(0, 6)
+      : [];
+
+  function select(s: string) {
+    if (mode === "replace") {
+      onChange({ target: { name, value: s, type: "text" } } as unknown as ChangeEvent<HTMLTextAreaElement>);
+    } else {
+      const lines = value.split("\n");
+      lines[lines.length - 1] = s;
+      const next = lines.join("\n") + "\n";
+      onChange({ target: { name, value: next, type: "text" } } as unknown as ChangeEvent<HTMLTextAreaElement>);
+    }
+    setOpen(false);
+  }
+
+  return (
+    <div className={`field suggest-field ${full ? "full" : ""}`}>
+      <label htmlFor={name}>{label}</label>
+      <textarea
+        id={name}
+        name={name}
+        value={value}
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={placeholder}
+        rows={4}
+      />
+      {open && matches.length > 0 && (
+        <div className="suggest-dropdown">
+          {matches.map((s, idx) => (
+            <button key={idx} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => select(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
   return (
     <article className="record">
       <div className="record-head">
@@ -351,6 +474,21 @@ function NoteCard({ note }: { note: Note }) {
       {note.inspection && <p><strong>점검내용:</strong> {note.inspection}</p>}
       {note.cause && <p><strong>원인:</strong> {note.cause}</p>}
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
+      {note.photos && note.photos.length > 0 && (
+        <div className="photo-thumbs">
+          {note.photos.map((photo) => (
+            <a
+              key={photo.id}
+              href={photo.webViewLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={photo.fileName}
+            >
+              <img src={photo.thumbnailLink} alt={photo.fileName} loading="lazy" />
+            </a>
+          ))}
+        </div>
+      )}
     </article>
   );
 }
