@@ -502,3 +502,4 @@ function NoteCard({ note }: { note: Note }) {
     </article>
   );
 }
+
