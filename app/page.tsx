@@ -448,6 +448,8 @@ function SuggestField({
     </div>
   );
 }
+
+function NoteCard({ note }: { note: Note }) {
   return (
     <article className="record">
       <div className="record-head">
