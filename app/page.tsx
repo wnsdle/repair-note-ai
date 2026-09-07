@@ -311,7 +311,23 @@ export default function Home() {
               />
               <div className="field full">
                 <label htmlFor="photos">정비 사진</label>
-                <input id="photos" type="file" accept="image/*" multiple onChange={(event) => setPhotos(Array.from(event.target.files || []))} />
+                <input
+                  id="photos"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files || []);
+                    const tooLarge = files.filter((f) => f.size > 4 * 1024 * 1024);
+                    const ok = files.filter((f) => f.size <= 4 * 1024 * 1024);
+                    setPhotos(ok);
+                    if (tooLarge.length > 0) {
+                      setStatus(
+                        `${tooLarge.map((f) => f.name).join(", ")} 파일은 4MB를 초과해서 제외되었습니다. 사진 앱에서 용량을 줄여 다시 선택해주세요.`
+                      );
+                    }
+                  }}
+                />
                 <p className="hint">사진은 Google Drive 전용 폴더에 저장됩니다. 사진 1장당 10MB 이하입니다.</p>
               </div>
             </div>
@@ -502,4 +518,3 @@ function NoteCard({ note }: { note: Note }) {
     </article>
   );
 }
-
