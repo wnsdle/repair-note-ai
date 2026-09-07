@@ -24,9 +24,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    // Vercel 서버리스 함수는 요청 본문 크기에 자체 한도(약 4.5MB)가 있어서,
+    // 그보다 여유 있게 4MB로 제한합니다. 더 큰 사진을 지원하려면
+    // 브라우저에서 구글드라이브로 직접 업로드하는 방식으로 바꿔야 합니다.
+    if (file.size > 4 * 1024 * 1024) {
       return NextResponse.json(
-        { error: "사진은 10MB 이하로 업로드해주세요." },
+        { error: "사진은 4MB 이하로 업로드해주세요. (서버 처리 한도로 인한 제한)" },
         { status: 400 }
       );
     }
