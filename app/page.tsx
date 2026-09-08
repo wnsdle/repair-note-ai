@@ -1,6 +1,7 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 
 type Photo = {
   id: string;
@@ -36,7 +37,8 @@ const initialForm = {
   rootCause: ""
 };
 
-export default function Home() {
+function HomeContent() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<"record" | "search" | "history">("record");
   const [form, setForm] = useState(initialForm);
   const [photos, setPhotos] = useState<File[]>([]);
@@ -48,6 +50,47 @@ export default function Home() {
   const [orderLookupLoading, setOrderLookupLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<{ symptoms: string[]; dtcCodes: string[] }>({ symptoms: [], dtcCodes: [] });
   const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
+
+  // 1. URL Query Parameter 파싱 및 자동 탭/폼 채우기 로직
+  useEffect(() => {
+    if (!searchParams) return;
+
+    const orderNo = searchParams.get("orderNo") || searchParams.get("orderId") || "";
+    const carNo = searchParams.get("carNo") || searchParams.get("plateNumber") || "";
+    const model = searchParams.get("model") || searchParams.get("vehicleType") || "";
+    const mileage = searchParams.get("mileage") || "";
+    const request = searchParams.get("request") || searchParams.get("symptom") || "";
+    const details = searchParams.get("details") || searchParams.get("inspection") || "";
+    const searchQuery = searchParams.get("search") || "";
+
+    // 검색 모드로 연결된 경우
+    if (searchQuery || (orderNo && searchParams.get("mode") === "search")) {
+      const q = searchQuery || orderNo;
+      setQuery(q);
+      setTab("search");
+      executeSearch(q);
+      return;
+    }
+
+    // 작성/기록 모드로 파라미터가 전달된 경우
+    if (orderNo || carNo || model || request || details) {
+      setTab("record");
+      setForm((prev) => ({
+        ...prev,
+        orderId: orderNo || prev.orderId,
+        plateNumber: carNo || prev.plateNumber,
+        vehicleType: model || prev.vehicleType,
+        mileage: mileage || prev.mileage,
+        symptom: request || prev.symptom,
+        inspection: details || prev.inspection
+      }));
+
+      // 오더번호만 오고 차량정보가 미비한 경우 자동으로 백엔드 조회 실행
+      if (orderNo && (!carNo || !model)) {
+        fetchOrderInfo(orderNo);
+      }
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     fetch("/api/suggestions")
@@ -86,16 +129,12 @@ export default function Home() {
     }
   }
 
-  async function lookupOrder() {
-    const orderId = form.orderId.trim();
-    if (!orderId) {
-      setStatus("오더번호를 먼저 입력해주세요.");
-      return;
-    }
+  // 오더 조회를 공통 함수로 분리
+  async function fetchOrderInfo(targetOrderId: string) {
     setOrderLookupLoading(true);
     setStatus("오더 정보를 불러오는 중입니다...");
     try {
-      const response = await fetch(`/api/order-lookup?orderId=${encodeURIComponent(orderId)}`);
+      const response = await fetch(`/api/order-lookup?orderId=${encodeURIComponent(targetOrderId)}`);
       const json = await response.json();
       if (!response.ok) {
         setStatus(json.error || "오더 정보를 찾지 못했습니다.");
@@ -112,6 +151,15 @@ export default function Home() {
     } finally {
       setOrderLookupLoading(false);
     }
+  }
+
+  async function lookupOrder() {
+    const orderId = form.orderId.trim();
+    if (!orderId) {
+      setStatus("오더번호를 먼저 입력해주세요.");
+      return;
+    }
+    fetchOrderInfo(orderId);
   }
 
   async function saveNote(event: FormEvent) {
@@ -185,15 +233,15 @@ export default function Home() {
       .catch(() => {});
   }
 
-  async function searchNotes(event: FormEvent) {
-    event.preventDefault();
-    if (!query.trim()) return;
+  // 검색 로직 함수로 분리
+  async function executeSearch(searchText: string) {
+    if (!searchText.trim()) return;
     setLoading(true);
     setStatus("내 정비 기록을 검색하는 중입니다...");
     const response = await fetch("/api/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({ query: searchText })
     });
     const json = await response.json();
     setLoading(false);
@@ -203,6 +251,11 @@ export default function Home() {
     }
     setResults(json.data || []);
     setStatus(`내 기록에서 ${json.data?.length || 0}건을 찾았습니다.`);
+  }
+
+  async function searchNotes(event: FormEvent) {
+    event.preventDefault();
+    executeSearch(query);
   }
 
   return (
@@ -367,6 +420,14 @@ export default function Home() {
   );
 }
 
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="shell p-6 text-center">불러오는 중...</div>}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
 function Field({
   label,
   name,
@@ -398,11 +459,6 @@ function Field({
   );
 }
 
-/**
- * 여러 줄 입력창 + 자동완성 목록.
- * mode="replace": 후보를 클릭하면 전체 내용을 그 후보로 바꿈 (증상용)
- * mode="append-line": 후보를 클릭하면 새 줄로 추가함 (경고등처럼 여러 개 누적하는 항목용)
- */
 function SuggestField({
   label,
   name,
