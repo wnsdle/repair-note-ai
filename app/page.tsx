@@ -529,10 +529,10 @@ function SuggestField({
   );
 }
 function NoteCard({ note }: { note: Note }) {
-  // 구글 드라이브 이미지 URL 변환 함수 (thumbnailLink 엑박 방지)
+  // 서버 프록시를 통한 구글 드라이브 이미지 URL 생성 (엑박 완벽 방지)
   const getImageUrl = (photo: Photo) => {
     if (photo.id) {
-      return `https://drive.google.com/uc?export=view&id=${photo.id}`;
+      return `/api/photos/proxy?fileId=${photo.id}`;
     }
     return photo.thumbnailLink || photo.webViewLink;
   };
@@ -580,9 +580,8 @@ function NoteCard({ note }: { note: Note }) {
                 loading="lazy"
                 className="w-20 h-20 object-cover"
                 onError={(e) => {
-                  // 다이렉트 링크도 실패할 경우 구글 드라이브 썸네일 주소로 2차 fallback
                   const target = e.target as HTMLImageElement;
-                  if (target.src !== photo.thumbnailLink && photo.thumbnailLink) {
+                  if (photo.thumbnailLink && target.src !== photo.thumbnailLink) {
                     target.src = photo.thumbnailLink;
                   }
                 }}
