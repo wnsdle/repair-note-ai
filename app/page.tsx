@@ -528,7 +528,6 @@ function SuggestField({
     </div>
   );
 }
-
 function NoteCard({ note }: { note: Note }) {
   // 구글 드라이브 이미지 URL 변환 함수 (thumbnailLink 엑박 방지)
   const getImageUrl = (photo: Photo) => {
