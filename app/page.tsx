@@ -530,6 +530,14 @@ function SuggestField({
 }
 
 function NoteCard({ note }: { note: Note }) {
+  // 구글 드라이브 이미지 URL 변환 함수 (thumbnailLink 엑박 방지)
+  const getImageUrl = (photo: Photo) => {
+    if (photo.id) {
+      return `https://drive.google.com/uc?export=view&id=${photo.id}`;
+    }
+    return photo.thumbnailLink || photo.webViewLink;
+  };
+
   return (
     <article className="record">
       <div className="record-head">
@@ -557,7 +565,7 @@ function NoteCard({ note }: { note: Note }) {
       {note.cause && <p><strong>원인:</strong> {note.cause}</p>}
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
       {note.photos && note.photos.length > 0 && (
-        <div className="photo-thumbs">
+        <div className="photo-thumbs flex gap-2 mt-3 flex-wrap">
           {note.photos.map((photo) => (
             <a
               key={photo.id}
@@ -565,8 +573,21 @@ function NoteCard({ note }: { note: Note }) {
               target="_blank"
               rel="noopener noreferrer"
               title={photo.fileName}
+              className="inline-block border rounded overflow-hidden shadow-sm hover:opacity-90 transition"
             >
-              <img src={photo.thumbnailLink} alt={photo.fileName} loading="lazy" />
+              <img
+                src={getImageUrl(photo)}
+                alt={photo.fileName}
+                loading="lazy"
+                className="w-20 h-20 object-cover"
+                onError={(e) => {
+                  // 다이렉트 링크도 실패할 경우 구글 드라이브 썸네일 주소로 2차 fallback
+                  const target = e.target as HTMLImageElement;
+                  if (target.src !== photo.thumbnailLink && photo.thumbnailLink) {
+                    target.src = photo.thumbnailLink;
+                  }
+                }}
+              />
             </a>
           ))}
         </div>
