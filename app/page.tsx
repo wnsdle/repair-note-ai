@@ -25,6 +25,8 @@ type Note = {
   created_at: string;
   drive_folder_url?: string;
   photos?: Photo[];
+  // 💡 검색 결과에서만 쓰임: "keyword"(정확히 일치) / "semantic"(의미가 비슷함)
+  matchType?: "keyword" | "semantic";
 };
 
 const initialForm = {
@@ -494,6 +496,7 @@ function HomeContent() {
               <div className="field">
                 <label htmlFor="query">증상, 경고등, 차량번호, 오더번호로 검색</label>
                 <input id="query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: RPM 헌팅 또는 P0087 또는 12가3456" />
+                <p className="hint">정확히 같은 단어가 없어도, 증상이 비슷한 기록을 "🔍 비슷한 기록"으로 함께 찾아드려요.</p>
               </div>
               <div className="actions">
                 <button className="primary" type="submit" disabled={loading}>🔍 검색하기</button>
@@ -648,10 +651,17 @@ function NoteCard({ note, onEdit }: { note: Note; onEdit?: (note: Note) => void 
     <article className="record">
       <div className="record-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
         <div>
-          <h3>
-            {note.vehicle_type || "차량형식 미입력"}
-            {note.plate_number ? ` · ${note.plate_number}` : ""}
-          </h3>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0 }}>
+              {note.vehicle_type || "차량형식 미입력"}
+              {note.plate_number ? ` · ${note.plate_number}` : ""}
+            </h3>
+            {note.matchType === "semantic" && (
+              <span className="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">
+                🔍 비슷한 기록
+              </span>
+            )}
+          </div>
           <p className="muted">
             {note.model_year ? `${note.model_year}년식 · ` : ""}
             {note.mileage_or_hours ? `${note.mileage_or_hours} · ` : ""}
