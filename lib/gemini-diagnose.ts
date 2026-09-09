@@ -1,7 +1,6 @@
 const GEMINI_CHAT_MODEL = "gemini-2.5-flash";
 
-export type DiagnosisSource = { title: string; uri: string };
-export type DiagnosisResult = { text: string; sources: DiagnosisSource[] };
+export type DiagnosisResult = { text: string };
 
 export type ExperienceContext = {
   vehicleType: string;
@@ -11,9 +10,23 @@ export type ExperienceContext = {
   cause: string;
 };
 
+function formatExperience(myExperience: ExperienceContext[]): string {
+  if (myExperience.length === 0) {
+    return "(일치하는 과거 정비 기록이 없습니다.)";
+  }
+  return myExperience
+    .map(
+      (r, i) =>
+        `${i + 1}) 차종: ${r.vehicleType || "미상"} / 증상: ${r.symptom} / DTC: ${
+          r.dtcCodes.join(", ") || "없음"
+        } / 점검내용: ${r.inspection || "없음"} / 원인: ${r.cause || "없음"}`
+    )
+    .join("\n");
+}
+
 /**
- * 증상 설명 + 내 과거 정비 경험을 바탕으로,
- * Gemini의 인터넷 검색(google_search grounding)을 활용해 AI 진단(원인 후보 + 점검 순서)을 생성합니다.
+ * 인터넷 검색(Grounding) 없이, Supabase에 저장된 과거 정비 기록(RAG)과
+ * Gemini의 자체 지식만으로 진단을 생성합니다.
  * API 키가 없거나 호출이 실패하면 null을 반환합니다.
  */
 export async function getAiDiagnosis(
@@ -24,28 +37,25 @@ export async function getAiDiagnosis(
   const trimmed = symptomQuery.trim();
   if (!apiKey || !trimmed) return null;
 
-  const experienceText = myExperience.length
-    ? myExperience
-        .map(
-          (r, i) =>
-            `${i + 1}) 차종: ${r.vehicleType || "미상"} / 증상: ${r.symptom} / 진단코드: ${
-              r.dtcCodes.join(", ") || "없음"
-            } / 점검내용: ${r.inspection || "없음"} / 원인: ${r.cause || "없음"}`
-        )
-        .join("\n")
-    : "관련된 내 과거 정비 기록이 없습니다.";
+  const prompt = `[System]
+당신은 베테랑 정비사의 데이터 기반 AI 정비 보조 시스템입니다.
+제시된 [과거 정비 기록]과 당신의 [정비 메커니즘 지식]만을 조합하여 [현재 증상]을 진단하세요. (인터넷 검색 기능 사용 금지)
 
-  const prompt = `당신은 대형 화물차(볼보트럭 등) 정비를 전문으로 하는 숙련된 정비사를 돕는 진단 보조입니다.
-아래 [현재 증상]과 정비사의 [내 과거 정비 경험]을 참고하고, 필요하면 인터넷 검색으로 관련 정비 매뉴얼/포럼/기술자료도 찾아서 종합한 뒤,
-1) 가능성 높은 원인 후보를 우선순위 순으로
-2) 정비소에서 바로 따라할 수 있는 구체적인 점검 순서를
-한국어로 정리해서 답해주세요. 확실하지 않은 부분은 추측이라고 명시해주세요. 불필요한 인사말 없이 바로 본론으로 답하세요.
+[제약 조건 - 엄격 준수]
+1. 반드시 제공된 [과거 정비 기록] 중 현재 증상과 가장 유사한 사례를 우선적으로 참고하여 답변을 도출하세요.
+2. [과거 정비 기록]에 없는 내용으로 진단할 경우, 그것이 AI의 일반 메커니즘 지식에 기반한 추론임을 명확히 밝히세요.
+3. 근거가 부족하거나 데이터가 없으면 솔직히 "기록된 과거 사례 중 일치하는 원인이 없습니다"라고 답하고, 일반적인 점검 순서만 제안하세요. (소설 쓰기 절대 금지)
+
+[과거 정비 기록 (Top ${myExperience.length || 0}개 유사 사례)]
+${formatExperience(myExperience)}
 
 [현재 증상]
 ${trimmed}
 
-[내 과거 정비 경험]
-${experienceText}`;
+[출력 포맷]
+1. 유사 과거 사례 분석 (과거에 해결했던 가장 비슷한 원인 및 사례)
+2. 추천 진단 순서 (확률 높은 순서대로 1, 2, 3 단계 점검 항목)
+3. 점검 시 주의사항 및 필요 측정값`;
 
   try {
     const response = await fetch(
@@ -57,8 +67,9 @@ ${experienceText}`;
           "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          tools: [{ google_search: {} }]
+          // 💡 인터넷 검색(tools: google_search)은 완전히 제외합니다.
+          //    무료 등급에서는 검색 기능이 사실상 막혀 있고, 정책상으로도 지금은 배제하기로 했습니다.
+          contents: [{ parts: [{ text: prompt }] }]
         })
       }
     );
@@ -78,12 +89,7 @@ ${experienceText}`;
 
     if (!text) return null;
 
-    const chunks = candidate?.groundingMetadata?.groundingChunks || [];
-    const sources: DiagnosisSource[] = chunks
-      .map((c: any) => ({ title: c?.web?.title || c?.web?.uri || "출처", uri: c?.web?.uri }))
-      .filter((s: DiagnosisSource) => Boolean(s.uri));
-
-    return { text, sources };
+    return { text };
   } catch (error) {
     console.error("Gemini diagnose request failed", error);
     return null;
