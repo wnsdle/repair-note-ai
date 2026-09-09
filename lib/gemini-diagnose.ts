@@ -1,4 +1,4 @@
-const GEMINI_CHAT_MODEL = "gemini-2.5-flash";
+const GEMINI_CHAT_MODEL = "gemini-3.6-flash";
 
 export type DiagnosisResult = { text: string };
 
