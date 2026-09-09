@@ -73,6 +73,10 @@ function HomeContent() {
   const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
   // 💡 현재 수정 중인 기록의 id (없으면 신규 작성 모드)
   const [editingId, setEditingId] = useState<string | null>(null);
+  // 💡 AI 진단(내 경험 + 인터넷 검색 + AI 판단) 관련 상태
+  const [diagnosis, setDiagnosis] = useState<{ text: string; sources: { title: string; uri: string }[] } | null>(null);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const [diagnosisError, setDiagnosisError] = useState("");
 
   // 1. URL Query Parameter 파싱 및 자동 탭/폼 채우기 로직
   useEffect(() => {
@@ -295,6 +299,9 @@ function HomeContent() {
     if (!searchText.trim()) return;
     setLoading(true);
     setStatus("내 정비 기록을 검색하는 중입니다...");
+    setDiagnosis(null);
+    setDiagnosisError("");
+
     const response = await fetch("/api/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -308,6 +315,24 @@ function HomeContent() {
     }
     setResults(json.data || []);
     setStatus(`내 기록에서 ${json.data?.length || 0}건을 찾았습니다.`);
+
+    // 💡 내 기록 검색과 별개로, 인터넷 검색 + AI 판단은 시간이 더 걸리므로 백그라운드로 이어서 요청합니다.
+    setDiagnosisLoading(true);
+    fetch("/api/diagnose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: searchText })
+    })
+      .then(async (res) => {
+        const j = await res.json();
+        if (!res.ok) {
+          setDiagnosisError(j.error || "AI 진단을 가져오지 못했습니다.");
+          return;
+        }
+        setDiagnosis({ text: j.text, sources: j.sources || [] });
+      })
+      .catch(() => setDiagnosisError("AI 진단 중 오류가 발생했습니다."))
+      .finally(() => setDiagnosisLoading(false));
   }
 
   async function searchNotes(event: FormEvent) {
@@ -494,15 +519,54 @@ function HomeContent() {
             <h2 className="section-title">내 정비 경험 검색</h2>
             <form onSubmit={searchNotes}>
               <div className="field">
-                <label htmlFor="query">증상, 경고등, 차량번호, 오더번호로 검색</label>
-                <input id="query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: RPM 헌팅 또는 P0087 또는 12가3456" />
-                <p className="hint">정확히 같은 단어가 없어도, 증상이 비슷한 기록을 "🔍 비슷한 기록"으로 함께 찾아드려요.</p>
+                <label htmlFor="query">증상을 자세히 적어주세요</label>
+                <textarea
+                  id="query"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="예: 시동이 걸릴듯 안걸릴듯 하다가 안걸림. 스타트모터는 정상 작동함"
+                  rows={4}
+                />
+                <p className="hint">
+                  자세히 적을수록 정확해요. 내 기록 중 비슷한 경험을 찾고, 인터넷 자료까지 참고해서 AI가 원인/점검순서를 함께 제안해드려요.
+                </p>
               </div>
               <div className="actions">
                 <button className="primary" type="submit" disabled={loading}>🔍 검색하기</button>
               </div>
             </form>
+
+            {/* 💡 AI 진단 결과: 내 기록 + 인터넷 검색을 참고한 AI의 원인/점검순서 제안 */}
+            {(diagnosisLoading || diagnosis || diagnosisError) && (
+              <div className="ai-diagnosis-box" style={{ marginTop: "16px", padding: "14px", background: "#f5f3ff", borderRadius: "10px", border: "1px solid #ddd6fe" }}>
+                <h3 style={{ margin: "0 0 8px", fontSize: "15px" }}>🤖 AI 진단 결과 (내 경험 + 인터넷 자료 참고)</h3>
+                {diagnosisLoading && <p className="muted">AI가 내 경험과 인터넷 자료를 종합해서 원인을 분석하는 중입니다... (최대 1분 정도 걸릴 수 있어요)</p>}
+                {diagnosisError && <p className="status error">{diagnosisError}</p>}
+                {diagnosis && (
+                  <>
+                    <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{diagnosis.text}</div>
+                    {diagnosis.sources.length > 0 && (
+                      <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #ddd6fe" }}>
+                        <p className="muted" style={{ marginBottom: "4px" }}>참고한 인터넷 자료</p>
+                        <ul style={{ margin: 0, paddingLeft: "18px" }}>
+                          {diagnosis.sources.map((s, idx) => (
+                            <li key={idx}>
+                              <a href={s.uri} target="_blank" rel="noopener noreferrer">{s.title || s.uri}</a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <p className="muted" style={{ marginTop: "8px", fontSize: "12px" }}>
+                      ⚠️ AI가 제안한 내용은 참고용입니다. 실제 점검/조치는 정비사의 판단으로 최종 확인해주세요.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
             <div>
+              <h3 className="section-title" style={{ marginTop: "18px", fontSize: "15px" }}>내 정비 기록</h3>
               {results.length === 0 ? (
                 <div className="empty">검색 결과가 여기에 표시됩니다.</div>
               ) : (
