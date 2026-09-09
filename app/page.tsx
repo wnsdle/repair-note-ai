@@ -5,11 +5,12 @@ import { useSearchParams } from "next/navigation";
 
 type Photo = {
   id: string;
-  thumbnailLink: string;
-  webViewLink: string;
   fileName: string;
+  webViewLink: string;
+  thumbnailLink?: string;
 };
 
+// Note 타입을 하나로 통합 (중복 선언 제거)
 type Note = {
   id: string;
   vehicle_type: string;
@@ -22,8 +23,10 @@ type Note = {
   inspection: string;
   cause: string;
   created_at: string;
+  drive_folder_url?: string;
   photos?: Photo[];
 };
+
 
 const initialForm = {
   vehicleType: "",
@@ -545,14 +548,19 @@ type Note = {
 };
 
 function NoteCard({ note }: { note: Note }) {
-  // 웹에서 1장 이상 올렸거나, DB에 폴더 링크가 생성된 경우에만 열기 버튼 노출
-  const folderUrl = note.drive_folder_url || (note.photos && note.photos.length > 0 ? note.photos[0].webViewLink : null);
+  // 웹에서 1장 이상 올렸거나, DB에 폴더 링크가 존재할 경우
+  const folderUrl =
+    note.drive_folder_url ||
+    (note.photos && note.photos.length > 0 ? note.photos[0].webViewLink : null);
 
   return (
     <article className="record">
       <div className="record-head">
         <div>
-          <h3>{note.vehicle_type || "차량형식 미입력"}{note.plate_number ? ` · ${note.plate_number}` : ""}</h3>
+          <h3>
+            {note.vehicle_type || "차량형식 미입력"}
+            {note.plate_number ? ` · ${note.plate_number}` : ""}
+          </h3>
           <p className="muted">
             {note.model_year ? `${note.model_year}년식 · ` : ""}
             {note.mileage_or_hours ? `${note.mileage_or_hours} · ` : ""}
@@ -560,7 +568,9 @@ function NoteCard({ note }: { note: Note }) {
           </p>
         </div>
       </div>
-      <p><strong>증상:</strong> {note.symptom}</p>
+      <p>
+        <strong>증상:</strong> {note.symptom}
+      </p>
       {note.dtc_codes && note.dtc_codes.length > 0 && (
         <div className="dtc-list">
           <strong>경고등/진단코드:</strong>
@@ -571,11 +581,19 @@ function NoteCard({ note }: { note: Note }) {
           </ul>
         </div>
       )}
-      {note.inspection && <p><strong>점검내용:</strong> {note.inspection}</p>}
-      {note.cause && <p><strong>원인:</strong> {note.cause}</p>}
+      {note.inspection && (
+        <p>
+          <strong>점검내용:</strong> {note.inspection}
+        </p>
+      )}
+      {note.cause && (
+        <p>
+          <strong>원인:</strong> {note.cause}
+        </p>
+      )}
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
-      
-      {/* 1장 이상 업로드되어 폴더가 존재하는 경우에만 노출 */}
+
+      {/* 폴더가 생성되어 링크가 있는 경우에만 표시 */}
       {folderUrl && (
         <div className="mt-3 pt-2 border-t border-gray-100">
           <a
