@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ text: diagnosis.text, sources: diagnosis.sources });
+    return NextResponse.json({ text: diagnosis.text });
   } catch (error) {
     console.error("POST /api/diagnose", error);
     return NextResponse.json({ error: "AI 진단 중 오류가 발생했습니다." }, { status: 500 });
