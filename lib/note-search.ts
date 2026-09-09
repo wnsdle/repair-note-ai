@@ -9,12 +9,16 @@ export type SearchedNote = Record<string, any>;
  */
 export async function searchInternalNotes(
   query: string,
-  opts?: { limit?: number }
+  opts?: { limit?: number; threshold?: number }
 ): Promise<SearchedNote[]> {
   const supabase = getSupabaseAdmin();
   const escaped = query.replace(/[%_]/g, (c: string) => `\\${c}`);
   const pattern = `%${escaped}%`;
+  
+  // 💡 기본 유사도 threshold를 0.65로 설정 (필요 시 외부에서 전달 가능)
+  const matchThreshold = opts?.threshold ?? 0.65;
 
+  // 1. 키워드 일치 검색
   const { data: keywordData, error: keywordError } = await supabase
     .from("repair_notes")
     .select("*")
@@ -40,8 +44,8 @@ export async function searchInternalNotes(
   }));
   const keywordIds = new Set(keywordResults.map((n) => n.id));
 
+  // 2. 임베딩 벡터 유사도 검색
   let semanticResults: SearchedNote[] = [];
-  // 검색어이므로 RETRIEVAL_QUERY 방식으로 임베딩합니다.
   const queryEmbedding = await getEmbedding(query, "RETRIEVAL_QUERY");
 
   if (queryEmbedding) {
@@ -50,7 +54,7 @@ export async function searchInternalNotes(
       {
         query_embedding: queryEmbedding,
         match_count: 20,
-        match_threshold: 0.6
+        match_threshold: matchThreshold // 👈 상향 조정된 threshold 전달
       }
     );
 
