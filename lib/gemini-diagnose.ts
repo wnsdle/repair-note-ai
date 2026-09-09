@@ -75,7 +75,19 @@ ${trimmed}
     );
 
     if (!response.ok) {
-      console.error("Gemini diagnose API error", await response.text());
+      const errorBody = await response.text();
+      if (response.status === 404) {
+        console.error(
+          `Gemini diagnose API 404: 모델명(${GEMINI_CHAT_MODEL})을 찾을 수 없습니다. 모델명 오타나 v1beta 경로를 확인하세요.`,
+          errorBody
+        );
+      } else if (response.status === 401 || response.status === 403) {
+        console.error("Gemini diagnose API 인증 오류: GEMINI_API_KEY가 유효하지 않거나 권한이 없습니다.", errorBody);
+      } else if (response.status === 429) {
+        console.error("Gemini diagnose API 요청 한도 초과(429).", errorBody);
+      } else {
+        console.error(`Gemini diagnose API error (${response.status})`, errorBody);
+      }
       return null;
     }
 
