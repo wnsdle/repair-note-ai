@@ -4,7 +4,7 @@ import { getAiDiagnosis } from "@/lib/gemini-diagnose";
 
 export const runtime = "nodejs";
 // 💡 인터넷 검색 없이 백엔드 DB 연동 + AI 생성만 수행하므로 응답 속도가 매우 빠릅니다.
-export const maxDuration = 30; 
+export const maxDuration = 15; 
 
 export async function POST(request: Request) {
   try {
