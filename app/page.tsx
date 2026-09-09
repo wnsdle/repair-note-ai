@@ -96,6 +96,15 @@ function HomeContent() {
     mileage: string;
     symptom: string;
   } | null>(null);
+  // 💡 Tech Tool 화면(제품정보+DTC목록) 분석 관련 상태
+  const [techToolLoading, setTechToolLoading] = useState(false);
+  const [techToolError, setTechToolError] = useState("");
+  const [techToolPreview, setTechToolPreview] = useState<{
+    vehicleType: string;
+    mileage: string;
+    orderId: string;
+    dtcCodes: string;
+  } | null>(null);
   // 💡 AI 진단(내 경험 + 인터넷 검색 + AI 판단) 관련 상태
   const [diagnosis, setDiagnosis] = useState<{ text: string } | null>(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
@@ -329,6 +338,47 @@ function HomeContent() {
     setWorkOrderPreview(null);
   }
 
+  // 💡 Tech Tool 화면(제품정보 + DTC목록) 사진 업로드 → 분석. 여러 장 한 번에 선택 가능.
+  async function handleTechToolPhotos(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    setTechToolLoading(true);
+    setTechToolError("");
+    setTechToolPreview(null);
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("files", file));
+      const response = await fetch("/api/parse-tech-tool", { method: "POST", body: formData });
+      const json = await response.json();
+      if (!response.ok) {
+        setTechToolError(json.error || "Tech Tool 화면을 분석하지 못했습니다.");
+        return;
+      }
+      setTechToolPreview(json);
+    } catch {
+      setTechToolError("Tech Tool 화면 처리 중 오류가 발생했습니다.");
+    } finally {
+      setTechToolLoading(false);
+    }
+  }
+
+  // 💡 Tech Tool 미리보기에서 "폼에 적용": 차종/주행거리/오더번호는 덮어쓰고, DTC는 기존 진단코드 뒤에 이어붙임
+  function applyTechToolPreview() {
+    if (!techToolPreview) return;
+    setForm((current) => ({
+      ...current,
+      vehicleType: techToolPreview.vehicleType || current.vehicleType,
+      mileage: techToolPreview.mileage || current.mileage,
+      orderId: techToolPreview.orderId || current.orderId,
+      errorCodes: techToolPreview.dtcCodes
+        ? [current.errorCodes, techToolPreview.dtcCodes].filter(Boolean).join("\n")
+        : current.errorCodes
+    }));
+    setTechToolPreview(null);
+  }
+
   // 💡 기록보기/검색 결과의 "수정" 버튼을 누르면 실행됨
   function startEdit(note: Note) {
     setEditingId(note.id);
@@ -557,7 +607,42 @@ function HomeContent() {
                   style={{ display: "none" }}
                 />
               </label>
+
+              <label className="secondary" style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", padding: "8px 14px" }}>
+                {techToolLoading ? "🔧 분석 중..." : "🔧 Tech Tool 화면 인식 (여러 장)"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleTechToolPhotos}
+                  disabled={techToolLoading}
+                  style={{ display: "none" }}
+                />
+              </label>
             </div>
+
+            {techToolError && <p className="status error">{techToolError}</p>}
+            {techToolPreview && (
+              <div className="field full" style={{ padding: "10px", background: "#ecfdf5", borderRadius: "10px", border: "1px solid #a7f3d0" }}>
+                <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: "13px" }}>🔧 Tech Tool 인식 결과 (확인 후 적용하세요)</p>
+                {techToolPreview.vehicleType && <p style={{ fontSize: "13px" }}><strong>차종:</strong> {techToolPreview.vehicleType}</p>}
+                {techToolPreview.mileage && <p style={{ fontSize: "13px" }}><strong>주행거리:</strong> {techToolPreview.mileage}</p>}
+                {techToolPreview.orderId && <p style={{ fontSize: "13px" }}><strong>작업주문번호:</strong> {techToolPreview.orderId}</p>}
+                {techToolPreview.dtcCodes && (
+                  <div style={{ fontSize: "13px" }}>
+                    <strong>DTC 목록:</strong>
+                    <div style={{ whiteSpace: "pre-wrap", marginTop: "2px" }}>{techToolPreview.dtcCodes}</div>
+                  </div>
+                )}
+                {!techToolPreview.vehicleType && !techToolPreview.mileage && !techToolPreview.orderId && !techToolPreview.dtcCodes && (
+                  <p className="muted" style={{ fontSize: "13px" }}>인식된 정보가 없습니다. 화면을 더 선명하게 다시 캡처해주세요.</p>
+                )}
+                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                  <button type="button" className="primary" onClick={applyTechToolPreview}>✅ 폼에 적용</button>
+                  <button type="button" className="secondary" onClick={() => setTechToolPreview(null)}>취소</button>
+                </div>
+              </div>
+            )}
 
             {voiceError && <p className="status error">{voiceError}</p>}
             {voicePreview && (
