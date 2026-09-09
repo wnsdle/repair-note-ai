@@ -17,6 +17,12 @@ function UploadContent() {
   const [request, setRequest] = useState('');
   const [details, setDetails] = useState('');
 
+  // 💡 사진 업로드 및 메세지 상태 추가
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   // URL Query Parameter에서 전달된 값 자동 세팅
   useEffect(() => {
     if (!searchParams) return;
@@ -32,21 +38,44 @@ function UploadContent() {
     setDetails(searchParams.get('details') || '');
   }, [searchParams]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Supabase 또는 백엔드 API 호출을 통한 저장 로직 구현
-    console.log({
-      orderNo,
-      carNo,
-      model,
-      mileage,
-      customerName,
-      phone,
-      repairDate,
-      request,
-      details,
-    });
-    alert('정비 기록 저장 로직을 연결해 주세요.');
+    setIsUploading(true);
+    setStatusMessage('정비 노트 및 사진을 업로드하는 중입니다...');
+    setErrorMessage(null);
+
+    try {
+      // TODO: 1. Supabase에 정비 기록(Note) 먼저 생성/저장 후 noteId 받아오기
+      // 예시 ID (실제 Supabase 저장 후 넘어온 note.id를 사용해야 합니다)
+      const noteId = 'sample-note-id';
+
+      // 2. 사진 파일이 선택되어 있다면 구글 드라이브 업로드 API 호출
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('noteId', noteId);
+        formData.append('file', selectedFile);
+
+        const uploadRes = await fetch('/api/photos/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const uploadData = await uploadRes.json();
+
+        if (!uploadRes.ok) {
+          throw new Error(uploadData.error || '구글 드라이브 업로드 실패');
+        }
+      }
+
+      setStatusMessage('✅ 정비 노트 및 사진 업로드가 성공적으로 완료되었습니다!');
+      setErrorMessage(null);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage(`❌ 오류 발생: ${err.message}`);
+      setStatusMessage(null);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -153,11 +182,37 @@ function UploadContent() {
             />
           </div>
 
+          {/* 💡 정비 사진 첨부 입력칸 */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">정비 사진 첨부 (구글 드라이브 자동 저장)</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              className="w-full p-2 border border-gray-300 rounded-lg text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+          </div>
+
+          {/* 💡 [저장] 버튼 바로 위: 성공 / 에러 메시지 표시 영역 */}
+          <div className="space-y-2 pt-2">
+            {statusMessage && (
+              <div className="p-3 text-sm rounded-lg bg-blue-50 text-blue-800 border border-blue-200">
+                {statusMessage}
+              </div>
+            )}
+            {errorMessage && (
+              <div className="p-3 text-sm rounded-lg bg-red-50 text-red-800 border border-red-200 font-medium whitespace-pre-line">
+                {errorMessage}
+              </div>
+            )}
+          </div>
+
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition"
+            disabled={isUploading}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition disabled:bg-gray-400"
           >
-            정비 노트 저장하기
+            {isUploading ? '저장 및 업로드 중...' : '정비 노트 저장하기'}
           </button>
         </form>
       </div>
