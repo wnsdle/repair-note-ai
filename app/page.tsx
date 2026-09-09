@@ -10,7 +10,6 @@ type Photo = {
   thumbnailLink?: string;
 };
 
-// 통합된 단일 Note 타입 선언 (중복 완전 제거)
 type Note = {
   id: string;
   vehicle_type: string;
@@ -52,8 +51,9 @@ function HomeContent() {
   const [orderLookupLoading, setOrderLookupLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<{ symptoms: string[]; dtcCodes: string[] }>({ symptoms: [], dtcCodes: [] });
   const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
+  // 💡 수정 모드 여부: null이면 신규 작성, id가 있으면 해당 기록을 수정 중
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // 1. URL Query Parameter 파싱 및 자동 탭/폼 채우기 로직
   useEffect(() => {
     if (!searchParams) return;
 
@@ -65,7 +65,6 @@ function HomeContent() {
     const details = searchParams.get("details") || searchParams.get("inspection") || "";
     const searchQuery = searchParams.get("search") || "";
 
-    // 검색 모드로 연결된 경우
     if (searchQuery || (orderNo && searchParams.get("mode") === "search")) {
       const q = searchQuery || orderNo;
       setQuery(q);
@@ -74,7 +73,6 @@ function HomeContent() {
       return;
     }
 
-    // 작성/기록 모드로 파라미터가 전달된 경우
     if (orderNo || carNo || model || request || details) {
       setTab("record");
       setForm((prev) => ({
@@ -87,7 +85,6 @@ function HomeContent() {
         inspection: details || prev.inspection
       }));
 
-      // 오더번호만 오고 차량정보가 미비한 경우 자동으로 백엔드 조회 실행
       if (orderNo && (!carNo || !model)) {
         fetchOrderInfo(orderNo);
       }
@@ -110,10 +107,12 @@ function HomeContent() {
     const response = await fetch("/api/repair-notes");
     const json = await response.json();
     setLoading(false);
+
     if (!response.ok) {
       setStatus(json.error || "기록을 불러오지 못했습니다.");
       return;
     }
+
     setNotes(json.data || []);
   }
 
@@ -124,24 +123,24 @@ function HomeContent() {
     setForm((current) => ({ ...current, [name]: value }));
   }
 
-  /** 엔터키로 다음 입력칸으로 넘어가지 않고, 그 칸 안에서 줄바꿈만 되도록 처리 (여러 줄 입력용) */
   function allowNewline(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter") {
       event.stopPropagation();
     }
   }
 
-  // 오더 조회를 공통 함수로 분리
   async function fetchOrderInfo(targetOrderId: string) {
     setOrderLookupLoading(true);
     setStatus("오더 정보를 불러오는 중입니다...");
     try {
       const response = await fetch(`/api/order-lookup?orderId=${encodeURIComponent(targetOrderId)}`);
       const json = await response.json();
+
       if (!response.ok) {
         setStatus(json.error || "오더 정보를 찾지 못했습니다.");
         return;
       }
+
       setForm((current) => ({
         ...current,
         plateNumber: json.data.plateNumber || current.plateNumber,
@@ -164,36 +163,73 @@ function HomeContent() {
     fetchOrderInfo(orderId);
   }
 
+  // 💡 기록보기/검색 화면에서 "수정" 버튼을 누르면 실행됩니다.
+  function startEdit(note: Note) {
+    setEditingId(note.id);
+    setForm({
+      vehicleType: note.vehicle_type || "",
+      modelYear: note.model_year || "",
+      mileage: note.mileage_or_hours || "",
+      orderId: note.order_id || "",
+      plateNumber: note.plate_number || "",
+      symptom: note.symptom || "",
+      errorCodes: (note.dtc_codes || []).join("\n"),
+      inspection: note.inspection || "",
+      rootCause: note.cause || ""
+    });
+    setPhotos([]);
+    setStatus("");
+    setFailedPhotos([]);
+    setTab("record");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(initialForm);
+    setPhotos([]);
+    setStatus("");
+    setFailedPhotos([]);
+  }
+
   async function saveNote(event: FormEvent) {
     event.preventDefault();
+    const wasEditing = Boolean(editingId);
     setLoading(true);
-    setStatus("정비 기록을 저장하는 중입니다...");
+    setStatus(wasEditing ? "정비 기록을 수정하는 중입니다..." : "정비 기록을 저장하는 중입니다...");
     setFailedPhotos([]);
 
     const response = await fetch("/api/repair-notes", {
-      method: "POST",
+      method: wasEditing ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
+      body: JSON.stringify(wasEditing ? { ...form, id: editingId } : form)
     });
+
     const json = await response.json();
 
     if (!response.ok) {
       setLoading(false);
-      setStatus(json.error || "저장하지 못했습니다.");
+      setStatus(json.error || (wasEditing ? "수정하지 못했습니다." : "저장하지 못했습니다."));
       return;
     }
 
+    const noteId = json.data.id;
     let uploaded = 0;
     const failed: string[] = [];
+
     for (const file of photos) {
       try {
         const photoData = new FormData();
-        photoData.append("noteId", json.data.id);
+        photoData.append("noteId", noteId);
         photoData.append("file", file);
+
         const photoResponse = await fetch("/api/photos/upload", {
           method: "POST",
           body: photoData
         });
+
         if (photoResponse.ok) {
           uploaded += 1;
         } else {
@@ -214,18 +250,21 @@ function HomeContent() {
 
     setForm(initialForm);
     setPhotos([]);
+    setEditingId(null);
     setLoading(false);
     setFailedPhotos(failed);
 
+    const verb = wasEditing ? "수정" : "저장";
+
     if (failed.length > 0) {
       setStatus(
-        `정비 기록은 저장되었지만, 사진 ${failed.length}장 업로드에 실패했습니다. 아래 사진은 휴대폰에서 삭제하지 마세요.`
+        `정비 기록은 ${verb}되었지만, 사진 ${failed.length}장 업로드에 실패했습니다. 아래 사진은 휴대폰에서 삭제하지 마세요.`
       );
     } else {
       setStatus(
         uploaded
-          ? `저장되었습니다. 사진 ${uploaded}장도 Google Drive에 올렸습니다.`
-          : "저장되었습니다."
+          ? `${verb}되었습니다. 사진 ${uploaded}장도 Google Drive에 올렸습니다.`
+          : `${verb}되었습니다.`
       );
     }
 
@@ -235,7 +274,6 @@ function HomeContent() {
       .catch(() => {});
   }
 
-  // 검색 로직 함수로 분리
   async function executeSearch(searchText: string) {
     if (!searchText.trim()) return;
     setLoading(true);
@@ -247,10 +285,12 @@ function HomeContent() {
     });
     const json = await response.json();
     setLoading(false);
+
     if (!response.ok) {
       setStatus(json.error || "검색하지 못했습니다.");
       return;
     }
+
     setResults(json.data || []);
     setStatus(`내 기록에서 ${json.data?.length || 0}건을 찾았습니다.`);
   }
@@ -286,9 +326,11 @@ function HomeContent() {
       </header>
 
       <section className="content">
-        {status && <div className={`status ${status.includes("못") || status.includes("오류") ? "error" : ""}`}>{status}</div>}
-
-        {failedPhotos.length > 0 && (
+        {/* 💡 검색/기록보기 탭에서는 기존처럼 상단에 상태 메시지 표시 */}
+        {tab !== "record" && status && (
+          <div className={`status ${status.includes("못") || status.includes("오류") ? "error" : ""}`}>{status}</div>
+        )}
+        {tab !== "record" && failedPhotos.length > 0 && (
           <div className="status error photo-fail-warning">
             ⚠️ 업로드 실패한 사진: {failedPhotos.join(", ")}
             <br />
@@ -298,7 +340,7 @@ function HomeContent() {
 
         {tab === "record" && (
           <form className="card" onSubmit={saveNote}>
-            <h2 className="section-title">정비 경험 기록</h2>
+            <h2 className="section-title">{editingId ? "정비 기록 수정" : "정비 경험 기록"}</h2>
 
             <div className="field full order-lookup-row">
               <label htmlFor="orderId">오더번호 (선택)</label>
@@ -322,6 +364,7 @@ function HomeContent() {
               <Field label="차량형식" name="vehicleType" value={form.vehicleType} onChange={updateForm} placeholder="예: FM 460" />
               <Field label="연식" name="modelYear" value={form.modelYear} onChange={updateForm} placeholder="예: 2021" />
               <Field label="주행거리 / 사용시간" name="mileage" value={form.mileage} onChange={updateForm} placeholder="예: 384,000 km" />
+
               <SuggestField
                 full
                 label="증상 *"
@@ -364,6 +407,7 @@ function HomeContent() {
                 multiline
                 placeholder="확인한 원인 또는 조치 내용을 적어주세요."
               />
+
               <div className="field full">
                 <label htmlFor="photos">정비 사진</label>
                 <input
@@ -386,9 +430,34 @@ function HomeContent() {
                 <p className="hint">사진은 Google Drive 전용 폴더에 저장됩니다. 사진 1장당 10MB 이하입니다.</p>
               </div>
             </div>
+
+            {/* 💡 저장/수정 버튼 바로 위에 상태 메시지 표시 */}
+            {status && (
+              <div className={`status ${status.includes("못") || status.includes("오류") ? "error" : ""}`}>{status}</div>
+            )}
+            {failedPhotos.length > 0 && (
+              <div className="status error photo-fail-warning">
+                ⚠️ 업로드 실패한 사진: {failedPhotos.join(", ")}
+                <br />
+                이 사진들은 Google Drive에 저장되지 않았습니다. <strong>휴대폰에서 원본을 삭제하지 마시고</strong>, 잠시 후 정비 기록 수정 화면에서 다시 업로드해주세요.
+              </div>
+            )}
+
             <div className="actions">
-              <button className="primary" type="submit" disabled={loading}>저장하기</button>
-              <button className="secondary" type="button" onClick={() => { setForm(initialForm); setPhotos([]); setStatus(""); }}>초기화</button>
+              <button className="primary" type="submit" disabled={loading}>
+                {editingId ? "수정 저장하기" : "저장하기"}
+              </button>
+              {editingId ? (
+                <button className="secondary" type="button" onClick={cancelEdit}>취소</button>
+              ) : (
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => { setForm(initialForm); setPhotos([]); setStatus(""); }}
+                >
+                  초기화
+                </button>
+              )}
             </div>
           </form>
         )}
@@ -406,7 +475,11 @@ function HomeContent() {
               </div>
             </form>
             <div>
-              {results.length === 0 ? <div className="empty">검색 결과가 여기에 표시됩니다.</div> : results.map((note) => <NoteCard key={note.id} note={note} />)}
+              {results.length === 0 ? (
+                <div className="empty">검색 결과가 여기에 표시됩니다.</div>
+              ) : (
+                results.map((note) => <NoteCard key={note.id} note={note} onEdit={startEdit} />)
+              )}
             </div>
           </section>
         )}
@@ -414,7 +487,13 @@ function HomeContent() {
         {tab === "history" && (
           <section className="card">
             <h2 className="section-title">저장된 정비 기록</h2>
-            {loading ? <div className="empty">불러오는 중입니다...</div> : notes.length === 0 ? <div className="empty">저장된 기록이 없습니다.<br />기록하기 탭에서 첫 정비 경험을 추가해보세요.</div> : notes.map((note) => <NoteCard key={note.id} note={note} />)}
+            {loading ? (
+              <div className="empty">불러오는 중입니다...</div>
+            ) : notes.length === 0 ? (
+              <div className="empty">저장된 기록이 없습니다.<br />기록하기 탭에서 첫 정비 경험을 추가해보세요.</div>
+            ) : (
+              notes.map((note) => <NoteCard key={note.id} note={note} onEdit={startEdit} />)
+            )}
           </section>
         )}
       </section>
@@ -483,10 +562,8 @@ function SuggestField({
   full?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-
   const lastLine = value.split("\n").pop() || "";
   const queryText = (mode === "append-line" ? lastLine : value).trim().toLowerCase();
-
   const matches =
     queryText.length > 0
       ? suggestions.filter((s) => s.toLowerCase().includes(queryText) && s.toLowerCase() !== queryText).slice(0, 6)
@@ -531,8 +608,7 @@ function SuggestField({
   );
 }
 
-function NoteCard({ note }: { note: Note }) {
-  // 웹에서 1장 이상 올렸거나, DB에 폴더 링크가 존재할 경우
+function NoteCard({ note, onEdit }: { note: Note; onEdit?: (note: Note) => void }) {
   const folderUrl =
     note.drive_folder_url ||
     (note.photos && note.photos.length > 0 ? note.photos[0].webViewLink : null);
@@ -551,10 +627,17 @@ function NoteCard({ note }: { note: Note }) {
             {new Date(note.created_at).toLocaleString("ko-KR")}
           </p>
         </div>
+        {onEdit && (
+          <button type="button" className="secondary" onClick={() => onEdit(note)}>
+            ✏️ 수정
+          </button>
+        )}
       </div>
+
       <p>
         <strong>증상:</strong> {note.symptom}
       </p>
+
       {note.dtc_codes && note.dtc_codes.length > 0 && (
         <div className="dtc-list">
           <strong>경고등/진단코드:</strong>
@@ -565,19 +648,21 @@ function NoteCard({ note }: { note: Note }) {
           </ul>
         </div>
       )}
+
       {note.inspection && (
         <p>
           <strong>점검내용:</strong> {note.inspection}
         </p>
       )}
+
       {note.cause && (
         <p>
           <strong>원인:</strong> {note.cause}
         </p>
       )}
+
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
 
-      {/* 폴더가 생성되어 링크가 있는 경우에만 표시 */}
       {folderUrl && (
         <div className="mt-3 pt-2 border-t border-gray-100">
           <a
