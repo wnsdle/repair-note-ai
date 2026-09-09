@@ -3,13 +3,13 @@ import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
 import { Readable } from "stream";
 
-// Supabase 클라이언트 설정
+// Supabase 클라이언트
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Google Drive Auth 설정
+// Google Drive Auth
 const auth = new google.auth.GoogleAuth({
   credentials: {
     client_email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. 해당 정비 기록(Note) 정보 조회
+    // 1. 해당 정비 기록 조회
     const { data: note, error: noteError } = await supabase
       .from("repair_notes")
       .select("id, plate_number, order_id, drive_folder_id, drive_folder_url")
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     let folderId = note.drive_folder_id;
     let folderUrl = note.drive_folder_url;
 
-    // 2. 구글 드라이브 폴더가 없는 경우 새로 생성 (최초 1번째 사진 업로드 시점)
+    // 2. 드라이브 폴더가 없으면 첫 번째 업로드 시점에 자동 생성
     if (!folderId) {
       const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.order_id || noteId.slice(0, 8)})`;
 
@@ -68,16 +68,13 @@ export async function POST(request: NextRequest) {
       folderId = folderResponse.data.id!;
       folderUrl = folderResponse.data.webViewLink!;
 
-      // 폴더 권한 설정 (링크 가진 사용자 열람 허용)
+      // 폴더 접근 권한 변경 (링크가 있는 사용자 열람)
       await drive.permissions.create({
         fileId: folderId,
-        requestBody: {
-          role: "reader",
-          type: "anyone",
-        },
+        requestBody: { role: "reader", type: "anyone" },
       });
 
-      // DB에 생성된 폴더 정보 기록
+      // repair_notes 테이블에 폴더 ID/URL 저장
       await supabase
         .from("repair_notes")
         .update({
@@ -87,11 +84,9 @@ export async function POST(request: NextRequest) {
         .eq("id", noteId);
     }
 
-    // 3. 폴더 내부로 파일 업로드
+    // 3. 폴더 내부로 사진 파일 업로드
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-
-    // Buffer를 Readable Stream으로 변환
     const stream = new Readable();
     stream.push(buffer);
     stream.push(null);
@@ -105,7 +100,17 @@ export async function POST(request: NextRequest) {
         mimeType: file.type,
         body: stream,
       },
-      fields: "id, webViewLink",
+      fields: "id, webViewLink, thumbnailLink",
+    });
+
+    // 4. 개별 사진 정보를 repair_note_photos 테이블에도 기록
+    await supabase.from("repair_note_photos").insert({
+      repair_note_id: noteId,
+      drive_file_id: uploadedFile.data.id,
+      file_name: file.name,
+      mime_type: file.type,
+      web_view_link: uploadedFile.data.webViewLink,
+      thumbnail_link: uploadedFile.data.thumbnailLink,
     });
 
     return NextResponse.json({
