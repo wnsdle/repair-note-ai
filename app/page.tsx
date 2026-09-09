@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState, Suspense } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 type Photo = {
@@ -73,10 +73,37 @@ function HomeContent() {
   const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
   // 💡 현재 수정 중인 기록의 id (없으면 신규 작성 모드)
   const [editingId, setEditingId] = useState<string | null>(null);
+  // 💡 음성메모 녹음/분석 관련 상태
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [voicePreview, setVoicePreview] = useState<{
+    transcript: string;
+    symptom: string;
+    errorCodes: string;
+    inspection: string;
+    cause: string;
+  } | null>(null);
+  // 💡 작업지시서 사진 분석 관련 상태
+  const [workOrderLoading, setWorkOrderLoading] = useState(false);
+  const [workOrderError, setWorkOrderError] = useState("");
+  const [workOrderPreview, setWorkOrderPreview] = useState<{
+    orderId: string;
+    plateNumber: string;
+    vehicleType: string;
+    modelYear: string;
+    mileage: string;
+    symptom: string;
+  } | null>(null);
   // 💡 AI 진단(내 경험 + 인터넷 검색 + AI 판단) 관련 상태
   const [diagnosis, setDiagnosis] = useState<{ text: string } | null>(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [diagnosisError, setDiagnosisError] = useState("");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
 
   // 1. URL Query Parameter 파싱 및 자동 탭/폼 채우기 로직
   useEffect(() => {
@@ -186,6 +213,120 @@ function HomeContent() {
       return;
     }
     fetchOrderInfo(orderId);
+  }
+
+  // 💡 음성메모 녹음 시작
+  async function startVoiceRecording() {
+    setVoiceError("");
+    setVoicePreview(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        uploadVoiceNote(blob);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+      setRecordSeconds(0);
+      recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+    } catch (err) {
+      setVoiceError("마이크 사용 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해주세요.");
+    }
+  }
+
+  // 💡 음성메모 녹음 중지 → 녹음이 끝나면 자동으로 서버에 업로드/분석 요청
+  function stopVoiceRecording() {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  }
+
+  async function uploadVoiceNote(blob: Blob) {
+    setVoiceLoading(true);
+    setVoiceError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", blob, "voice-note.webm");
+      const response = await fetch("/api/voice-note", { method: "POST", body: formData });
+      const json = await response.json();
+      if (!response.ok) {
+        setVoiceError(json.error || "음성메모를 분석하지 못했습니다.");
+        return;
+      }
+      setVoicePreview(json);
+    } catch {
+      setVoiceError("음성메모 처리 중 오류가 발생했습니다.");
+    } finally {
+      setVoiceLoading(false);
+    }
+  }
+
+  // 💡 미리보기에서 "폼에 적용" 눌렀을 때: 빈 값이 아닌 항목만 기존 내용 뒤에 이어붙임
+  function applyVoicePreview() {
+    if (!voicePreview) return;
+    setForm((current) => ({
+      ...current,
+      symptom: voicePreview.symptom ? [current.symptom, voicePreview.symptom].filter(Boolean).join("\n") : current.symptom,
+      errorCodes: voicePreview.errorCodes
+        ? [current.errorCodes, voicePreview.errorCodes].filter(Boolean).join("\n")
+        : current.errorCodes,
+      inspection: voicePreview.inspection
+        ? [current.inspection, voicePreview.inspection].filter(Boolean).join("\n")
+        : current.inspection,
+      cause: voicePreview.cause ? [current.cause, voicePreview.cause].filter(Boolean).join("\n") : current.cause
+    }));
+    setVoicePreview(null);
+  }
+
+  // 💡 작업지시서 사진 업로드 → 분석
+  async function handleWorkOrderPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // 같은 파일 다시 선택 가능하도록 초기화
+    if (!file) return;
+
+    setWorkOrderLoading(true);
+    setWorkOrderError("");
+    setWorkOrderPreview(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/parse-work-order", { method: "POST", body: formData });
+      const json = await response.json();
+      if (!response.ok) {
+        setWorkOrderError(json.error || "작업지시서를 분석하지 못했습니다.");
+        return;
+      }
+      setWorkOrderPreview(json);
+    } catch {
+      setWorkOrderError("작업지시서 처리 중 오류가 발생했습니다.");
+    } finally {
+      setWorkOrderLoading(false);
+    }
+  }
+
+  // 💡 작업지시서 미리보기에서 "폼에 적용": 빈 값이 아닌 항목만 기존 값을 덮어씀
+  function applyWorkOrderPreview() {
+    if (!workOrderPreview) return;
+    setForm((current) => ({
+      ...current,
+      orderId: workOrderPreview.orderId || current.orderId,
+      plateNumber: workOrderPreview.plateNumber || current.plateNumber,
+      vehicleType: workOrderPreview.vehicleType || current.vehicleType,
+      modelYear: workOrderPreview.modelYear || current.modelYear,
+      mileage: workOrderPreview.mileage || current.mileage,
+      symptom: workOrderPreview.symptom ? [current.symptom, workOrderPreview.symptom].filter(Boolean).join("\n") : current.symptom
+    }));
+    setWorkOrderPreview(null);
   }
 
   // 💡 기록보기/검색 결과의 "수정" 버튼을 누르면 실행됨
@@ -386,6 +527,76 @@ function HomeContent() {
                 </span>
               )}
             </div>
+
+            {/* 💡 음성메모 / 작업지시서 사진으로 빠르게 채우기 */}
+            <div
+              className="field full"
+              style={{ display: "flex", gap: "8px", flexWrap: "wrap", padding: "10px", background: "#f8fafc", borderRadius: "10px" }}
+            >
+              <button
+                type="button"
+                className={isRecording ? "primary" : "secondary"}
+                onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
+                disabled={voiceLoading}
+              >
+                {voiceLoading
+                  ? "🎤 분석 중..."
+                  : isRecording
+                  ? `⏹ 녹음 중지 (${recordSeconds}초)`
+                  : "🎤 음성메모로 기록"}
+              </button>
+
+              <label className="secondary" style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", padding: "8px 14px" }}>
+                {workOrderLoading ? "📷 분석 중..." : "📷 작업지시서 사진으로 채우기"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleWorkOrderPhoto}
+                  disabled={workOrderLoading}
+                  style={{ display: "none" }}
+                />
+              </label>
+            </div>
+
+            {voiceError && <p className="status error">{voiceError}</p>}
+            {voicePreview && (
+              <div className="field full" style={{ padding: "10px", background: "#f5f3ff", borderRadius: "10px", border: "1px solid #ddd6fe" }}>
+                <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: "13px" }}>🎤 음성 인식 결과 (확인 후 적용하세요)</p>
+                <p className="muted" style={{ fontSize: "12px", marginBottom: "6px" }}>"{voicePreview.transcript}"</p>
+                {voicePreview.symptom && <p style={{ fontSize: "13px" }}><strong>증상:</strong> {voicePreview.symptom}</p>}
+                {voicePreview.errorCodes && <p style={{ fontSize: "13px" }}><strong>진단코드:</strong> {voicePreview.errorCodes}</p>}
+                {voicePreview.inspection && <p style={{ fontSize: "13px" }}><strong>점검내용:</strong> {voicePreview.inspection}</p>}
+                {voicePreview.cause && <p style={{ fontSize: "13px" }}><strong>원인:</strong> {voicePreview.cause}</p>}
+                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                  <button type="button" className="primary" onClick={applyVoicePreview}>✅ 폼에 적용</button>
+                  <button type="button" className="secondary" onClick={() => setVoicePreview(null)}>취소</button>
+                </div>
+              </div>
+            )}
+
+            {workOrderError && <p className="status error">{workOrderError}</p>}
+            {workOrderPreview && (
+              <div className="field full" style={{ padding: "10px", background: "#eff6ff", borderRadius: "10px", border: "1px solid #bfdbfe" }}>
+                <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: "13px" }}>📷 작업지시서 인식 결과 (확인 후 적용하세요)</p>
+                {workOrderPreview.orderId && <p style={{ fontSize: "13px" }}><strong>오더번호:</strong> {workOrderPreview.orderId}</p>}
+                {workOrderPreview.plateNumber && <p style={{ fontSize: "13px" }}><strong>차량번호:</strong> {workOrderPreview.plateNumber}</p>}
+                {workOrderPreview.vehicleType && <p style={{ fontSize: "13px" }}><strong>차종:</strong> {workOrderPreview.vehicleType}</p>}
+                {workOrderPreview.modelYear && <p style={{ fontSize: "13px" }}><strong>연식:</strong> {workOrderPreview.modelYear}</p>}
+                {workOrderPreview.mileage && <p style={{ fontSize: "13px" }}><strong>주행거리:</strong> {workOrderPreview.mileage}</p>}
+                {workOrderPreview.symptom && <p style={{ fontSize: "13px" }}><strong>요청사항:</strong> {workOrderPreview.symptom}</p>}
+                {!workOrderPreview.orderId &&
+                  !workOrderPreview.plateNumber &&
+                  !workOrderPreview.vehicleType &&
+                  !workOrderPreview.modelYear &&
+                  !workOrderPreview.mileage &&
+                  !workOrderPreview.symptom && <p className="muted" style={{ fontSize: "13px" }}>인식된 정보가 없습니다. 사진을 더 선명하게 다시 찍어주세요.</p>}
+                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                  <button type="button" className="primary" onClick={applyWorkOrderPreview}>✅ 폼에 적용</button>
+                  <button type="button" className="secondary" onClick={() => setWorkOrderPreview(null)}>취소</button>
+                </div>
+              </div>
+            )}
 
             <div className="field full order-lookup-row">
               <label htmlFor="orderId">오더번호 (선택)</label>
