@@ -9,19 +9,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Google Drive Auth
-const auth = new google.auth.GoogleAuth({
-  credentials: {
-    client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-  },
-  scopes: ["https://www.googleapis.com/auth/drive"],
-});
-
-const drive = google.drive({ version: "v3", auth });
-
 export async function POST(request: NextRequest) {
   try {
+    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+    if (!clientEmail || !privateKey) {
+      return NextResponse.json(
+        { error: "구글 환경변수(GOOGLE_CLIENT_EMAIL 또는 GOOGLE_PRIVATE_KEY)가 설정되지 않았습니다." },
+        { status: 500 }
+      );
+    }
+
+    // JWT 인증 객체 생성
+    const auth = new google.auth.JWT(
+      clientEmail,
+      undefined,
+      privateKey,
+      ["https://www.googleapis.com/auth/drive"]
+    );
+
+    const drive = google.drive({ version: "v3", auth });
+
     const formData = await request.formData();
     const noteId = formData.get("noteId") as string;
     const file = formData.get("file") as File;
