@@ -529,13 +529,10 @@ function SuggestField({
   );
 }
 function NoteCard({ note }: { note: Note }) {
-  // 서버 프록시를 통한 구글 드라이브 이미지 URL 생성 (엑박 완벽 방지)
-  const getImageUrl = (photo: Photo) => {
-    if (photo.id) {
-      return `/api/photos/proxy?fileId=${photo.id}`;
-    }
-    return photo.thumbnailLink || photo.webViewLink;
-  };
+  // 사진 폴더 또는 첫번째 사진 웹 링크 연결
+  const driveLink = note.photos && note.photos.length > 0 
+    ? note.photos[0].webViewLink 
+    : null;
 
   return (
     <article className="record">
@@ -563,31 +560,27 @@ function NoteCard({ note }: { note: Note }) {
       {note.inspection && <p><strong>점검내용:</strong> {note.inspection}</p>}
       {note.cause && <p><strong>원인:</strong> {note.cause}</p>}
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
+      
+      {/* 사진 첨부 버튼/배지 영역 */}
       {note.photos && note.photos.length > 0 && (
-        <div className="photo-thumbs flex gap-2 mt-3 flex-wrap">
-          {note.photos.map((photo) => (
+        <div className="mt-3 pt-2 border-t border-gray-100 flex items-center gap-2">
+          {driveLink ? (
             <a
-              key={photo.id}
-              href={photo.webViewLink}
+              href={driveLink}
               target="_blank"
               rel="noopener noreferrer"
-              title={photo.fileName}
-              className="inline-block border rounded overflow-hidden shadow-sm hover:opacity-90 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-medium transition"
             >
-              <img
-                src={getImageUrl(photo)}
-                alt={photo.fileName}
-                loading="lazy"
-                className="w-20 h-20 object-cover"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  if (photo.thumbnailLink && target.src !== photo.thumbnailLink) {
-                    target.src = photo.thumbnailLink;
-                  }
-                }}
-              />
+              <span>📁</span>
+              <span>첨부된 정비 사진 {note.photos.length}장 보기</span>
+              <span className="text-xs text-blue-500">↗</span>
             </a>
-          ))}
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium">
+              <span>📷</span>
+              <span>사진 {note.photos.length}장 첨부됨</span>
+            </span>
+          )}
         </div>
       )}
     </article>
