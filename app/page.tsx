@@ -10,7 +10,7 @@ type Photo = {
   thumbnailLink?: string;
 };
 
-// Note 타입을 하나로 통합 (중복 선언 제거)
+// 통합된 단일 Note 타입 선언 (중복 완전 제거)
 type Note = {
   id: string;
   vehicle_type: string;
@@ -26,7 +26,6 @@ type Note = {
   drive_folder_url?: string;
   photos?: Photo[];
 };
-
 
 const initialForm = {
   vehicleType: "",
@@ -531,21 +530,6 @@ function SuggestField({
     </div>
   );
 }
-type Note = {
-  id: string;
-  vehicle_type: string;
-  model_year: string;
-  mileage_or_hours: string;
-  order_id: string;
-  plate_number: string;
-  symptom: string;
-  dtc_codes: string[];
-  inspection: string;
-  cause: string;
-  created_at: string;
-  drive_folder_url?: string; // 드라이브 폴더 주소
-  photos?: Photo[];
-};
 
 function NoteCard({ note }: { note: Note }) {
   // 웹에서 1장 이상 올렸거나, DB에 폴더 링크가 존재할 경우
