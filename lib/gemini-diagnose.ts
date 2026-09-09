@@ -69,7 +69,11 @@ ${trimmed}
         body: JSON.stringify({
           // 💡 인터넷 검색(tools: google_search)은 완전히 제외합니다.
           //    무료 등급에서는 검색 기능이 사실상 막혀 있고, 정책상으로도 지금은 배제하기로 했습니다.
-          contents: [{ parts: [{ text: prompt }] }]
+          contents: [{ parts: [{ text: prompt }] }],
+          // 진단 응답 속도를 위해 thinking 강도를 낮춥니다 (정확도보다 응답속도 우선).
+          generationConfig: {
+            thinkingConfig: { thinkingLevel: "low" }
+          }
         })
       }
     );
