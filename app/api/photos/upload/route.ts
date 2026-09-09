@@ -1,75 +1,122 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
-import { uploadToRepairFolder } from "@/lib/google-drive";
+import { Readable } from "stream";
 
-export const runtime = "nodejs";
-
-// 백엔드 API에서 RLS 권한 제약을 우회하기 위한 Supabase Admin 클라이언트 생성
-const supabaseAdmin = createClient(
+// Supabase 클라이언트 설정
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function POST(request: Request) {
+// Google Drive Auth 설정
+const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+  },
+  scopes: ["https://www.googleapis.com/auth/drive"],
+});
+
+const drive = google.drive({ version: "v3", auth });
+
+export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const noteId = String(formData.get("noteId") || "");
-    const file = formData.get("file");
+    const noteId = formData.get("noteId") as string;
+    const file = formData.get("file") as File;
 
-    if (!noteId || !(file instanceof File)) {
+    if (!noteId || !file) {
       return NextResponse.json(
-        { error: "정비 기록과 사진을 함께 보내주세요." },
+        { error: "필수 데이터(noteId 또는 file)가 누락되었습니다." },
         { status: 400 }
       );
     }
 
-    if (!file.type.startsWith("image/")) {
-      return NextResponse.json(
-        { error: "이미지 파일만 업로드할 수 있습니다." },
-        { status: 400 }
-      );
-    }
-
-    if (file.size > 4 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: "사진은 4MB 이하로 업로드해주세요. (서버 처리 한도로 인한 제한)" },
-        { status: 400 }
-      );
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const safeName = file.name.replace(/[^a-zA-Z0-9가-힣._-]/g, "_");
-    const driveFile = await uploadToRepairFolder({
-      fileName: `${new Date().toISOString().slice(0, 10)}_${noteId}_${safeName}`,
-      mimeType: file.type,
-      buffer,
-    });
-
-    const { data, error } = await supabaseAdmin
-      .from("repair_note_photos")
-      .insert({
-        repair_note_id: noteId,
-        drive_file_id: driveFile.id,
-        file_name: driveFile.name,
-        mime_type: driveFile.mimeType,
-        web_view_link: driveFile.webViewLink,
-        thumbnail_link: driveFile.thumbnailLink,
-      })
-      .select()
+    // 1. 해당 정비 기록(Note) 정보 조회
+    const { data: note, error: noteError } = await supabase
+      .from("repair_notes")
+      .select("id, plate_number, order_id, drive_folder_id, drive_folder_url")
+      .eq("id", noteId)
       .single();
 
-    if (error) throw error;
-    return NextResponse.json({ data }, { status: 201 });
-  } catch (error) {
-    console.error("POST /api/photos/upload", error);
+    if (noteError || !note) {
+      return NextResponse.json(
+        { error: "정비 기록을 찾을 수 없습니다." },
+        { status: 404 }
+      );
+    }
+
+    let folderId = note.drive_folder_id;
+    let folderUrl = note.drive_folder_url;
+
+    // 2. 구글 드라이브 폴더가 없는 경우 새로 생성 (최초 1번째 사진 업로드 시점)
+    if (!folderId) {
+      const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.order_id || noteId.slice(0, 8)})`;
+
+      const folderResponse = await drive.files.create({
+        requestBody: {
+          name: folderName,
+          mimeType: "application/vnd.google-apps.folder",
+          parents: process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID
+            ? [process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID]
+            : undefined,
+        },
+        fields: "id, webViewLink",
+      });
+
+      folderId = folderResponse.data.id!;
+      folderUrl = folderResponse.data.webViewLink!;
+
+      // 폴더 권한 설정 (링크 가진 사용자 열람 허용)
+      await drive.permissions.create({
+        fileId: folderId,
+        requestBody: {
+          role: "reader",
+          type: "anyone",
+        },
+      });
+
+      // DB에 생성된 폴더 정보 기록
+      await supabase
+        .from("repair_notes")
+        .update({
+          drive_folder_id: folderId,
+          drive_folder_url: folderUrl,
+        })
+        .eq("id", noteId);
+    }
+
+    // 3. 폴더 내부로 파일 업로드
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    // Buffer를 Readable Stream으로 변환
+    const stream = new Readable();
+    stream.push(buffer);
+    stream.push(null);
+
+    const uploadedFile = await drive.files.create({
+      requestBody: {
+        name: file.name,
+        parents: [folderId],
+      },
+      media: {
+        mimeType: file.type,
+        body: stream,
+      },
+      fields: "id, webViewLink",
+    });
+
+    return NextResponse.json({
+      success: true,
+      folderUrl,
+      fileId: uploadedFile.data.id,
+    });
+  } catch (error: any) {
+    console.error("Upload Error:", error);
     return NextResponse.json(
-      { error: "사진 업로드에 실패했습니다. Google Drive 설정을 확인해주세요." },
+      { error: error.message || "업로드 중 오류 발생" },
       { status: 500 }
     );
   }
