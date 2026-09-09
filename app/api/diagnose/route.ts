@@ -3,8 +3,7 @@ import { searchInternalNotes } from "@/lib/note-search";
 import { getAiDiagnosis } from "@/lib/gemini-diagnose";
 
 export const runtime = "nodejs";
-// 💡 인터넷 검색 없이 백엔드 DB 연동 + AI 생성만 수행하므로 응답 속도가 매우 빠릅니다.
-export const maxDuration = 15; 
+export const maxDuration = 30; // Hobby 플랜 기준 최대 60초까지 가능. 여유 있게 30초로 설정.
 
 export async function POST(request: Request) {
   try {
@@ -15,10 +14,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "증상을 입력해주세요." }, { status: 400 });
     }
 
-    // 💡 유사도 threshold를 0.65로 지정하여 관련 없는 노트("오옹" 등)가 걸러지도록 설정합니다.
-    // (만약 searchInternalNotes 함수에서 threshold 옵션을 받는다면 아래와 같이 전달합니다)
-    const relatedNotes = await searchInternalNotes(query, { limit: 5, threshold: 0.65 });
-
+    // AI 판단에 참고시킬 내 경험은 상위 5건만 사용합니다 (프롬프트가 너무 길어지지 않도록).
+    const relatedNotes = await searchInternalNotes(query, { limit: 5 });
     const context = relatedNotes.map((n) => ({
       vehicleType: n.vehicle_type,
       symptom: n.symptom,
