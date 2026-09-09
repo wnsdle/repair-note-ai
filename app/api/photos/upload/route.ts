@@ -11,23 +11,20 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
 
-    if (!clientEmail || !privateKey) {
+    if (!clientId || !clientSecret || !refreshToken) {
       return NextResponse.json(
-        { error: "구글 환경변수(GOOGLE_CLIENT_EMAIL 또는 GOOGLE_PRIVATE_KEY)가 설정되지 않았습니다." },
+        { error: "구글 OAuth 환경변수(GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_DRIVE_REFRESH_TOKEN)가 설정되지 않았습니다." },
         { status: 500 }
       );
     }
 
-    // JWT 인증 객체 생성
-    const auth = new google.auth.JWT(
-      clientEmail,
-      undefined,
-      privateKey,
-      ["https://www.googleapis.com/auth/drive"]
-    );
+    // 개인 계정 OAuth 인증 객체 생성 (서비스 계정 X)
+    const auth = new google.auth.OAuth2(clientId, clientSecret);
+    auth.setCredentials({ refresh_token: refreshToken });
 
     const drive = google.drive({ version: "v3", auth });
 
@@ -61,8 +58,7 @@ export async function POST(request: NextRequest) {
 
     // 2. 드라이브 폴더가 없으면 첫 번째 업로드 시점에 자동 생성
     if (!folderId) {
-const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.order_id || noteId.slice(0, 8)})`;
-
+      const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.order_id || noteId.slice(0, 8)})`;
 
       const folderResponse = await drive.files.create({
         requestBody: {
@@ -73,7 +69,6 @@ const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.orde
             : undefined,
         },
         fields: "id, webViewLink",
-        supportsAllDrives: true, // 👈 공유 드라이브/상위 폴더 지원 옵션 추가
       });
 
       folderId = folderResponse.data.id!;
@@ -83,7 +78,6 @@ const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.orde
       await drive.permissions.create({
         fileId: folderId,
         requestBody: { role: "reader", type: "anyone" },
-        supportsAllDrives: true, // 👈 권한 변경 시 옵션 추가
       });
 
       // repair_notes 테이블에 폴더 ID/URL 저장
@@ -113,7 +107,6 @@ const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.orde
         body: stream,
       },
       fields: "id, webViewLink, thumbnailLink",
-      supportsAllDrives: true, // 👈 공유 드라이브/상위 폴더 지원 옵션 추가
     });
 
     // 4. 개별 사진 정보를 repair_note_photos 테이블에도 기록
