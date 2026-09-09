@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getEmbedding, buildEmbeddingSource } from "@/lib/gemini-embedding";
 
 export const runtime = "nodejs";
 
@@ -22,10 +23,19 @@ function parseDtcCodes(value: unknown): string[] {
     .filter(Boolean);
 }
 
-/** POST / PATCH 공통으로 쓰는 저장용 필드 구성 */
-function buildNoteFields(body: any) {
+/**
+ * POST / PATCH 공통으로 쓰는 저장용 필드 구성
+ * 💡 임베딩(의미 기반 검색용 벡터)도 여기서 함께 계산합니다.
+ * Gemini 임베딩 호출이 실패해도 저장 자체는 계속 진행되고,
+ * 그 기록은 키워드 검색으로만 찾을 수 있게 됩니다(치명적 오류 아님).
+ */
+async function buildNoteFields(body: any) {
   const symptom = clean(body.symptom);
   const dtcCodes = parseDtcCodes(body.errorCodes);
+  const inspection = clean(body.inspection);
+  const cause = clean(body.rootCause);
+
+  const embedding = await getEmbedding(buildEmbeddingSource({ symptom, inspection, cause }));
 
   return {
     symptom,
@@ -38,8 +48,9 @@ function buildNoteFields(body: any) {
       plate_number: clean(body.plateNumber),
       symptom,
       dtc_codes: dtcCodes,
-      inspection: clean(body.inspection),
-      cause: clean(body.rootCause),
+      inspection,
+      cause,
+      embedding,
       // 검색용 태그는 사용자가 입력하지 않아도, 아래 값들을 자동으로 모아서 생성합니다.
       search_text: [
         clean(body.vehicleType),
@@ -47,8 +58,8 @@ function buildNoteFields(body: any) {
         clean(body.orderId),
         symptom,
         dtcCodes.join(" "),
-        clean(body.inspection),
-        clean(body.rootCause)
+        inspection,
+        cause
       ]
         .filter(Boolean)
         .join(" ")
@@ -112,7 +123,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { symptom, note } = buildNoteFields(body);
+    const { symptom, note } = await buildNoteFields(body);
 
     if (!symptom) {
       return NextResponse.json(
@@ -153,7 +164,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const { symptom, note } = buildNoteFields(body);
+    const { symptom, note } = await buildNoteFields(body);
 
     if (!symptom) {
       return NextResponse.json(
