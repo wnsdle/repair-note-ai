@@ -36,7 +36,7 @@ export async function getEmbedding(
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent`.replace('v1beta', 'v1'),
       {
         method: "POST",
         headers: {
