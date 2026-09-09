@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         {
           query_embedding: queryEmbedding,
           match_count: 20,
-          match_threshold: 0.45
+          match_threshold: 0.6
         }
       );
 
