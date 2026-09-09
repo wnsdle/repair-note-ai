@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseAdmin();
     // %, _ 는 ilike 패턴에서 특수문자로 쓰이므로 이스케이프합니다.
-    const escaped = query.replace(/[%_]/g, (c) => `\\${c}`);
+    const escaped = query.replace(/[%_]/g, (c: string) => `\\${c}`);
     const pattern = `%${escaped}%`;
 
     // 1. 기존 키워드(정확히 일치) 검색 — 지금까지와 동일하게 동작합니다.
