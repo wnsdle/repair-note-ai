@@ -22,6 +22,40 @@ function parseDtcCodes(value: unknown): string[] {
     .filter(Boolean);
 }
 
+/** POST / PATCH 공통으로 쓰는 저장용 필드 구성 */
+function buildNoteFields(body: any) {
+  const symptom = clean(body.symptom);
+  const dtcCodes = parseDtcCodes(body.errorCodes);
+
+  return {
+    symptom,
+    dtcCodes,
+    note: {
+      vehicle_type: clean(body.vehicleType),
+      model_year: clean(body.modelYear),
+      mileage_or_hours: clean(body.mileage),
+      order_id: clean(body.orderId),
+      plate_number: clean(body.plateNumber),
+      symptom,
+      dtc_codes: dtcCodes,
+      inspection: clean(body.inspection),
+      cause: clean(body.rootCause),
+      // 검색용 태그는 사용자가 입력하지 않아도, 아래 값들을 자동으로 모아서 생성합니다.
+      search_text: [
+        clean(body.vehicleType),
+        clean(body.plateNumber),
+        clean(body.orderId),
+        symptom,
+        dtcCodes.join(" "),
+        clean(body.inspection),
+        clean(body.rootCause)
+      ]
+        .filter(Boolean)
+        .join(" ")
+    }
+  };
+}
+
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
@@ -38,7 +72,11 @@ export async function GET() {
 
     // 사진은 별도 테이블에서 한 번에 모아 가져온 뒤, 각 기록에 붙여줍니다.
     // 원본 사진 파일은 서버를 거치지 않고, 구글드라이브가 제공하는 썸네일/보기 주소만 사용합니다.
-    let photosByNote: Record<string, { id: string; thumbnailLink: string; webViewLink: string; fileName: string }[]> = {};
+    let photosByNote: Record<
+      string,
+      { id: string; thumbnailLink: string; webViewLink: string; fileName: string }[]
+    > = {};
+
     if (noteIds.length > 0) {
       const { data: photos, error: photoError } = await supabase
         .from("repair_note_photos")
@@ -74,39 +112,14 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const symptom = clean(body.symptom);
+    const { symptom, note } = buildNoteFields(body);
+
     if (!symptom) {
       return NextResponse.json(
         { error: "증상을 입력해주세요." },
         { status: 400 }
       );
     }
-
-    const dtcCodes = parseDtcCodes(body.errorCodes);
-
-    const note = {
-      vehicle_type: clean(body.vehicleType),
-      model_year: clean(body.modelYear),
-      mileage_or_hours: clean(body.mileage),
-      order_id: clean(body.orderId),
-      plate_number: clean(body.plateNumber),
-      symptom,
-      dtc_codes: dtcCodes,
-      inspection: clean(body.inspection),
-      cause: clean(body.rootCause),
-      // 검색용 태그는 사용자가 입력하지 않아도, 아래 값들을 자동으로 모아서 생성합니다.
-      search_text: [
-        clean(body.vehicleType),
-        clean(body.plateNumber),
-        clean(body.orderId),
-        symptom,
-        dtcCodes.join(" "),
-        clean(body.inspection),
-        clean(body.rootCause)
-      ]
-        .filter(Boolean)
-        .join(" ")
-    };
 
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
@@ -116,11 +129,54 @@ export async function POST(request: Request) {
       .single();
 
     if (error) throw error;
+
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     console.error("POST /api/repair-notes", error);
     return NextResponse.json(
       { error: "정비 기록을 저장하지 못했습니다." },
+      { status: 500 }
+    );
+  }
+}
+
+// 💡 기존 정비 기록 수정용 (body에 id를 함께 전달)
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const id = clean(body.id);
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "수정할 기록의 id가 전달되지 않았습니다." },
+        { status: 400 }
+      );
+    }
+
+    const { symptom, note } = buildNoteFields(body);
+
+    if (!symptom) {
+      return NextResponse.json(
+        { error: "증상을 입력해주세요." },
+        { status: 400 }
+      );
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("repair_notes")
+      .update(note)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error("PATCH /api/repair-notes", error);
+    return NextResponse.json(
+      { error: "정비 기록을 수정하지 못했습니다." },
       { status: 500 }
     );
   }
