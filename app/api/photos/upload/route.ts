@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     // 2. 드라이브 폴더가 없으면 첫 번째 업로드 시점에 자동 생성
     if (!folderId) {
-      const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.order_id || noteId.slice(0, 8)})`;
+      const folderName = `[정비기록] ${note.plate_number \vert{}\vert{} "차량"} (${note.order_id || noteId.slice(0, 8)})`;
 
       const folderResponse = await drive.files.create({
         requestBody: {
@@ -72,6 +72,7 @@ export async function POST(request: NextRequest) {
             : undefined,
         },
         fields: "id, webViewLink",
+        supportsAllDrives: true, // 👈 공유 드라이브/상위 폴더 지원 옵션 추가
       });
 
       folderId = folderResponse.data.id!;
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
       await drive.permissions.create({
         fileId: folderId,
         requestBody: { role: "reader", type: "anyone" },
+        supportsAllDrives: true, // 👈 권한 변경 시 옵션 추가
       });
 
       // repair_notes 테이블에 폴더 ID/URL 저장
@@ -110,6 +112,7 @@ export async function POST(request: NextRequest) {
         body: stream,
       },
       fields: "id, webViewLink, thumbnailLink",
+      supportsAllDrives: true, // 👈 공유 드라이브/상위 폴더 지원 옵션 추가
     });
 
     // 4. 개별 사진 정보를 repair_note_photos 테이블에도 기록
