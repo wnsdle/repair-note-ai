@@ -528,11 +528,25 @@ function SuggestField({
     </div>
   );
 }
+type Note = {
+  id: string;
+  vehicle_type: string;
+  model_year: string;
+  mileage_or_hours: string;
+  order_id: string;
+  plate_number: string;
+  symptom: string;
+  dtc_codes: string[];
+  inspection: string;
+  cause: string;
+  created_at: string;
+  drive_folder_url?: string; // 드라이브 폴더 주소
+  photos?: Photo[];
+};
+
 function NoteCard({ note }: { note: Note }) {
-  // 사진 폴더 또는 첫번째 사진 웹 링크 연결
-  const driveLink = note.photos && note.photos.length > 0 
-    ? note.photos[0].webViewLink 
-    : null;
+  // 웹에서 1장 이상 올렸거나, DB에 폴더 링크가 생성된 경우에만 열기 버튼 노출
+  const folderUrl = note.drive_folder_url || (note.photos && note.photos.length > 0 ? note.photos[0].webViewLink : null);
 
   return (
     <article className="record">
@@ -561,26 +575,19 @@ function NoteCard({ note }: { note: Note }) {
       {note.cause && <p><strong>원인:</strong> {note.cause}</p>}
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
       
-      {/* 사진 첨부 버튼/배지 영역 */}
-      {note.photos && note.photos.length > 0 && (
-        <div className="mt-3 pt-2 border-t border-gray-100 flex items-center gap-2">
-          {driveLink ? (
-            <a
-              href={driveLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-medium transition"
-            >
-              <span>📁</span>
-              <span>첨부된 정비 사진 {note.photos.length}장 보기</span>
-              <span className="text-xs text-blue-500">↗</span>
-            </a>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium">
-              <span>📷</span>
-              <span>사진 {note.photos.length}장 첨부됨</span>
-            </span>
-          )}
+      {/* 1장 이상 업로드되어 폴더가 존재하는 경우에만 노출 */}
+      {folderUrl && (
+        <div className="mt-3 pt-2 border-t border-gray-100">
+          <a
+            href={folderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-semibold transition"
+          >
+            <span>📁</span>
+            <span>정비 사진 드라이브 폴더 열기</span>
+            <span className="text-xs text-blue-500">↗</span>
+          </a>
         </div>
       )}
     </article>
