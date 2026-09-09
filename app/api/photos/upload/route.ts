@@ -61,7 +61,9 @@ export async function POST(request: NextRequest) {
 
     // 2. 드라이브 폴더가 없으면 첫 번째 업로드 시점에 자동 생성
     if (!folderId) {
-      const folderName = `[정비기록] ${note.plate_number \vert{}\vert{} "차량"} (${note.order_id || noteId.slice(0, 8)})`;
+      // ⭕ 올바르게 수정한 코드
+const folderName = `[정비기록] ${note.plate_number || "차량"} (${note.order_id || noteId.slice(0, 8)})`;
+
 
       const folderResponse = await drive.files.create({
         requestBody: {
