@@ -177,49 +177,50 @@ function HomeContent() {
     setNotes(json.data || []);
   }
 
-async function deleteNote(id: string) {
-  if (
-    !window.confirm(
-      "이 정비 기록을 삭제하시겠습니까?\n기록과 연결된 Google Drive 사진도 함께 삭제됩니다."
-    )
-  ) {
-    return;
-  }
-
-  setLoading(true);
-  setStatus("");
-
-  try {
-    const response = await fetch("/api/repair-notes", {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ id }),
-    });
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      setStatus(json.error || "정비 기록을 삭제하지 못했습니다.");
+  async function deleteNote(id: string) {
+    if (
+      !window.confirm(
+        "이 정비 기록을 삭제하시겠습니까?\n기록과 연결된 Google Drive 사진도 함께 삭제됩니다."
+      )
+    ) {
       return;
     }
 
-    setNotes((current) => current.filter((note) => note.id !== id));
+    setLoading(true);
+    setStatus("");
 
-    if (editingId === id) {
-      setEditingId(null);
-      setForm(initialForm);
-      setPhotos([]);
+    try {
+      const response = await fetch("/api/repair-notes", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok) {
+        setStatus(json.error || "정비 기록을 삭제하지 못했습니다.");
+        return;
+      }
+
+      setNotes((current) => current.filter((note) => note.id !== id));
+
+      if (editingId === id) {
+        setEditingId(null);
+        setForm(initialForm);
+        setPhotos([]);
+      }
+
+      setStatus("정비 기록을 삭제했습니다.");
+    } catch {
+      setStatus("정비 기록 삭제 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
     }
-
-    setStatus("정비 기록을 삭제했습니다.");
-  } catch {
-    setStatus("정비 기록 삭제 중 오류가 발생했습니다.");
-  } finally {
-    setLoading(false);
   }
-}
+
   function updateForm(
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) {
@@ -915,7 +916,7 @@ async function deleteNote(id: string) {
                 기록하기 탭에서 첫 정비 경험을 추가해보세요.
               </div>
             ) : (
-              notes.map((note) => <NoteCard key={note.id} note={note} onEdit={startEdit} />)
+              notes.map((note) => <NoteCard key={note.id} note={note} onEdit={startEdit} onDelete={deleteNote} />)
             )}
           </section>
         )}
@@ -1032,7 +1033,16 @@ function SuggestField({
 }
 
 // 💡 onEdit prop 추가: 전달되면 카드 우측 상단에 "수정" 버튼이 표시됨
-function NoteCard({ note, onEdit }: { note: Note; onEdit?: (note: Note) => void }) {
+// 💡 onDelete prop 추가: 전달되면 카드 우측 상단에 "삭제" 버튼이 표시됨 (기록보기 탭에서만 전달)
+function NoteCard({
+  note,
+  onEdit,
+  onDelete
+}: {
+  note: Note;
+  onEdit?: (note: Note) => void;
+  onDelete?: (id: string) => void;
+}) {
   // 웹에서 1장 이상 올렸거나, DB에 폴더 링크가 존재할 경우
   const folderUrl =
     note.drive_folder_url ||
@@ -1059,23 +1069,28 @@ function NoteCard({ note, onEdit }: { note: Note; onEdit?: (note: Note) => void 
             {new Date(note.created_at).toLocaleString("ko-KR")}
           </p>
         </div>
-        {onEdit && (
-          <button
-            type="button"
-            onClick={() => onEdit(note)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-xs font-semibold transition"
-            style={{ whiteSpace: "nowrap" }}
-          >
-            ✏️ 수정
-          </button>
-<button
-  type="button"
-  onClick={() => deleteNote(note.id)}
-  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
->
-  삭제
-</button>
-        )}
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(note)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-xs font-semibold transition"
+              style={{ whiteSpace: "nowrap" }}
+            >
+              ✏️ 수정
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(note.id)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-semibold transition border border-red-200"
+              style={{ whiteSpace: "nowrap" }}
+            >
+              🗑 삭제
+            </button>
+          )}
+        </div>
       </div>
 
       <p>
