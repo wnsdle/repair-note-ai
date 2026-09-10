@@ -231,7 +231,7 @@ export async function parseWorkOrderImage(imageBase64: string, mimeType: string)
   "symptom": "고객 요청사항/증상 설명 (문서에 적혀 있는 경우만, 없으면 빈 문자열)"
 }
 
-문서에 없는 내용을 추측해서 채우지 마세요. 글씨가 흐리거나 애매하면 빈 문자열로 두세요.`;
+중요: 오디오에 사람이 말한 내용이 실제로 들리지 않으면(무음이거나 소음/작업 소리만 있는 경우) transcript를 포함한 모든 필드를 빈 문자열로 반환하세요. 말소리가 있더라도 그 안에서 언급되지 않은 항목은 절대 추측하거나 지어내지 마세요. 애매하면 무조건 빈 문자열로 두세요.`;
 
   const result = await callGeminiForJson({ mimeType, data: imageBase64 }, prompt);
   if (!result) return null;
