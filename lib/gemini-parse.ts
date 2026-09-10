@@ -204,6 +204,7 @@ export async function parseTechToolScreens(
     return null;
   }
 }
+export type WorkOrderParseResult = {
   orderId: string;
   plateNumber: string;
   vehicleType: string;
