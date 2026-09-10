@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { google } from "googleapis";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getEmbedding, buildEmbeddingSource } from "@/lib/gemini-embedding";
 
@@ -8,10 +9,6 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/**
- * 경고등/진단코드 입력을 배열로 변환합니다.
- * 줄바꿈(엔터)으로 구분해서 여러 줄 입력하면 각 줄이 하나의 항목이 됩니다.
- */
 function parseDtcCodes(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((v) => String(v).trim()).filter(Boolean);
@@ -23,19 +20,15 @@ function parseDtcCodes(value: unknown): string[] {
     .filter(Boolean);
 }
 
-/**
- * POST / PATCH 공통으로 쓰는 저장용 필드 구성
- * 💡 임베딩(의미 기반 검색용 벡터)도 여기서 함께 계산합니다.
- * Gemini 임베딩 호출이 실패해도 저장 자체는 계속 진행되고,
- * 그 기록은 키워드 검색으로만 찾을 수 있게 됩니다(치명적 오류 아님).
- */
 async function buildNoteFields(body: any) {
   const symptom = clean(body.symptom);
   const dtcCodes = parseDtcCodes(body.errorCodes);
   const inspection = clean(body.inspection);
   const cause = clean(body.rootCause);
 
-  const embedding = await getEmbedding(buildEmbeddingSource({ symptom, inspection, cause }));
+  const embedding = await getEmbedding(
+    buildEmbeddingSource({ symptom, inspection, cause })
+  );
 
   return {
     symptom,
@@ -51,7 +44,6 @@ async function buildNoteFields(body: any) {
       inspection,
       cause,
       embedding,
-      // 검색용 태그는 사용자가 입력하지 않아도, 아래 값들을 자동으로 모아서 생성합니다.
       search_text: [
         clean(body.vehicleType),
         clean(body.plateNumber),
@@ -59,11 +51,11 @@ async function buildNoteFields(body: any) {
         symptom,
         dtcCodes.join(" "),
         inspection,
-        cause
+        cause,
       ]
         .filter(Boolean)
-        .join(" ")
-    }
+        .join(" "),
+    },
   };
 }
 
@@ -81,17 +73,22 @@ export async function GET() {
     const notes = notesData || [];
     const noteIds = notes.map((n) => n.id);
 
-    // 사진은 별도 테이블에서 한 번에 모아 가져온 뒤, 각 기록에 붙여줍니다.
-    // 원본 사진 파일은 서버를 거치지 않고, 구글드라이브가 제공하는 썸네일/보기 주소만 사용합니다.
     let photosByNote: Record<
       string,
-      { id: string; thumbnailLink: string; webViewLink: string; fileName: string }[]
+      {
+        id: string;
+        thumbnailLink: string;
+        webViewLink: string;
+        fileName: string;
+      }[]
     > = {};
 
     if (noteIds.length > 0) {
       const { data: photos, error: photoError } = await supabase
         .from("repair_note_photos")
-        .select("id, repair_note_id, thumbnail_link, web_view_link, file_name")
+        .select(
+          "id, repair_note_id, thumbnail_link, web_view_link, file_name"
+        )
         .in("repair_note_id", noteIds);
 
       if (!photoError && photos) {
@@ -102,13 +99,16 @@ export async function GET() {
             id: p.id,
             thumbnailLink: p.thumbnail_link,
             webViewLink: p.web_view_link,
-            fileName: p.file_name
+            fileName: p.file_name,
           });
         }
       }
     }
 
-    const withPhotos = notes.map((n) => ({ ...n, photos: photosByNote[n.id] || [] }));
+    const withPhotos = notes.map((n) => ({
+      ...n,
+      photos: photosByNote[n.id] || [],
+    }));
 
     return NextResponse.json({ data: withPhotos });
   } catch (error) {
@@ -151,7 +151,6 @@ export async function POST(request: Request) {
   }
 }
 
-// 💡 기존 정비 기록 수정용 (body에 id를 함께 전달)
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
@@ -188,6 +187,128 @@ export async function PATCH(request: Request) {
     console.error("PATCH /api/repair-notes", error);
     return NextResponse.json(
       { error: "정비 기록을 수정하지 못했습니다." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * 정비 기록 삭제
+ *
+ * DB의 정비 기록/사진 정보와 함께, 해당 기록에 연결된
+ * Google Drive 사진 파일 및 전용 폴더도 삭제한다.
+ */
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const id = clean(body.id);
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "삭제할 기록의 id가 전달되지 않았습니다." },
+        { status: 400 }
+      );
+    }
+
+    const supabase = getSupabaseAdmin();
+
+    // 1. 기록과 Drive 폴더 ID 확인
+    const { data: note, error: noteError } = await supabase
+      .from("repair_notes")
+      .select("id, drive_folder_id")
+      .eq("id", id)
+      .single();
+
+    if (noteError || !note) {
+      return NextResponse.json(
+        { error: "삭제할 정비 기록을 찾을 수 없습니다." },
+        { status: 404 }
+      );
+    }
+
+    // 2. 연결된 Drive 파일 ID 확인
+    const { data: photos, error: photosError } = await supabase
+      .from("repair_note_photos")
+      .select("id, drive_file_id")
+      .eq("repair_note_id", id);
+
+    if (photosError) throw photosError;
+
+    const driveFileIds = (photos || [])
+      .map((photo) => photo.drive_file_id)
+      .filter((fileId): fileId is string => Boolean(fileId));
+
+    // 3. Drive OAuth 설정이 있는 경우 사진과 전용 폴더 삭제
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+
+    if (driveFileIds.length > 0 || note.drive_folder_id) {
+      if (!clientId || !clientSecret || !refreshToken) {
+        return NextResponse.json(
+          {
+            error:
+              "Google Drive 삭제에 필요한 OAuth 환경변수가 설정되지 않았습니다.",
+          },
+          { status: 500 }
+        );
+      }
+
+      const auth = new google.auth.OAuth2(clientId, clientSecret);
+      auth.setCredentials({ refresh_token: refreshToken });
+
+      const drive = google.drive({ version: "v3", auth });
+
+      // 이미 Drive에서 삭제된 파일(404)은 정상적으로 건너뛴다.
+      for (const fileId of driveFileIds) {
+        try {
+          await drive.files.delete({ fileId });
+        } catch (error: any) {
+          if (error?.code !== 404) {
+            throw error;
+          }
+        }
+      }
+
+      // 사진이 들어 있던 전용 폴더도 삭제
+      if (note.drive_folder_id) {
+        try {
+          await drive.files.delete({ fileId: note.drive_folder_id });
+        } catch (error: any) {
+          if (error?.code !== 404) {
+            throw error;
+          }
+        }
+      }
+    }
+
+    // 4. DB 사진 레코드 삭제
+    const { error: photoDeleteError } = await supabase
+      .from("repair_note_photos")
+      .delete()
+      .eq("repair_note_id", id);
+
+    if (photoDeleteError) throw photoDeleteError;
+
+    // 5. 정비 기록 삭제
+    const { error: noteDeleteError } = await supabase
+      .from("repair_notes")
+      .delete()
+      .eq("id", id);
+
+    if (noteDeleteError) throw noteDeleteError;
+
+    return NextResponse.json({
+      success: true,
+      message: "정비 기록과 연결된 사진을 삭제했습니다.",
+    });
+  } catch (error: any) {
+    console.error("DELETE /api/repair-notes", error);
+    return NextResponse.json(
+      {
+        error:
+          error?.message || "정비 기록을 삭제하지 못했습니다.",
+      },
       { status: 500 }
     );
   }
