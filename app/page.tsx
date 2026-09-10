@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-
+import Image from "next/image";
 type Photo = {
   id: string;
   fileName: string;
@@ -580,7 +580,9 @@ function HomeContent() {
       <header className="header">
         <div className="header-inner">
           <div className="brand">
-            <div className="brand-mark">🔧</div>
+            <div className="brand-mark" style={{ width: 44, height: 44, position: "relative" }}>
+  <Image src="/logo.png" alt="정비노트 AI 로고" fill style={{ objectFit: "contain" }} />
+</div>
             <div>
               <h1>정비노트 AI</h1>
               <p className="subtitle">나의 경험을 저장하고 다시 찾는 정비 기록</p>
