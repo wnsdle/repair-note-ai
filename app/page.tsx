@@ -177,6 +177,49 @@ function HomeContent() {
     setNotes(json.data || []);
   }
 
+async function deleteNote(id: string) {
+  if (
+    !window.confirm(
+      "이 정비 기록을 삭제하시겠습니까?\n기록과 연결된 Google Drive 사진도 함께 삭제됩니다."
+    )
+  ) {
+    return;
+  }
+
+  setLoading(true);
+  setStatus("");
+
+  try {
+    const response = await fetch("/api/repair-notes", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id }),
+    });
+
+    const json = await response.json();
+
+    if (!response.ok) {
+      setStatus(json.error || "정비 기록을 삭제하지 못했습니다.");
+      return;
+    }
+
+    setNotes((current) => current.filter((note) => note.id !== id));
+
+    if (editingId === id) {
+      setEditingId(null);
+      setForm(initialForm);
+      setPhotos([]);
+    }
+
+    setStatus("정비 기록을 삭제했습니다.");
+  } catch {
+    setStatus("정비 기록 삭제 중 오류가 발생했습니다.");
+  } finally {
+    setLoading(false);
+  }
+}
   function updateForm(
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) {
