@@ -292,7 +292,7 @@ function HomeContent() {
       inspection: voicePreview.inspection
         ? [current.inspection, voicePreview.inspection].filter(Boolean).join("\n")
         : current.inspection,
-      rootCause: voicePreview.cause ? [current.cause, voicePreview.cause].filter(Boolean).join("\n") : current.cause
+      rootCause: voicePreview.cause ? [current.rootCause, voicePreview.cause].filter(Boolean).join("\n") : current.cause
     }));
     setVoicePreview(null);
   }
