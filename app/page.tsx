@@ -1068,6 +1068,13 @@ function NoteCard({ note, onEdit }: { note: Note; onEdit?: (note: Note) => void 
           >
             ✏️ 수정
           </button>
+<button
+  type="button"
+  onClick={() => deleteNote(note.id)}
+  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
+>
+  삭제
+</button>
         )}
       </div>
 
