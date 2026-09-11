@@ -554,7 +554,7 @@ function HomeContent() {
                   id="voiceInputText"
                   value={voiceInputText}
                   onChange={(event) => setVoiceInputText(event.target.value)}
-                  placeholder="키보드의 마이크 버튼을 눌러 말하거나 직접 입력하세요. 예: 공회전에서 RPM이 오르락내리락 함, 연료필터 점검함, 스로틀바디 오염이 원인"
+                  placeholder="키보드의 마이크 버튼을 눌러 말하거나 직접 입력하세요."
                   rows={3}
                 />
                 <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
@@ -565,7 +565,7 @@ function HomeContent() {
               </div>
 
               <label className="secondary" style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", padding: "8px 14px", width: "fit-content" }}>
-                {techToolLoading ? "🔧 분석 중..." : "🔧 Tech Tool 화면 인식"}
+                {techToolLoading ? "🔧 분석 중..." : " Tech Tool 화면 인식"}
                 <input
                   type="file"
                   accept="image/*"
@@ -603,7 +603,7 @@ function HomeContent() {
             {voiceError && <p className="status error">{voiceError}</p>}
             {voicePreview && (
               <div className="field full" style={{ padding: "10px", background: "#f5f3ff", borderRadius: "10px", border: "1px solid #ddd6fe" }}>
-                <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: "13px" }}>🎤 AI 정리 결과 (확인 후 적용하세요)</p>
+                <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: "13px" }}> AI 정리 결과 (확인 후 적용하세요)</p>
                 {voicePreview.symptom && <p style={{ fontSize: "13px" }}><strong>증상:</strong> {voicePreview.symptom}</p>}
                 {voicePreview.errorCodes && <p style={{ fontSize: "13px" }}><strong>진단코드:</strong> {voicePreview.errorCodes}</p>}
                 {voicePreview.inspection && <p style={{ fontSize: "13px" }}><strong>점검내용:</strong> {voicePreview.inspection}</p>}
