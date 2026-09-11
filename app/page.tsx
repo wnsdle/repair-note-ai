@@ -548,7 +548,7 @@ function HomeContent() {
             >
               <div>
                 <label htmlFor="voiceInputText" style={{ fontSize: "13px", fontWeight: 600, marginBottom: "4px", display: "block" }}>
-                  🎤 음성 타이핑으로 기록하기
+                  기록하기
                 </label>
                 <textarea
                   id="voiceInputText"
@@ -559,13 +559,13 @@ function HomeContent() {
                 />
                 <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
                   <button type="button" className="primary" onClick={analyzeVoiceText} disabled={voiceLoading}>
-                    {voiceLoading ? "🎤 정리 중..." : "🎤 AI로 정리하기"}
+                    {voiceLoading ? " 정리 중..." : "정리하기"}
                   </button>
                 </div>
               </div>
 
               <label className="secondary" style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", padding: "8px 14px", width: "fit-content" }}>
-                {techToolLoading ? "🔧 분석 중..." : "🔧 Tech Tool 화면 인식 (여러 장)"}
+                {techToolLoading ? "🔧 분석 중..." : "🔧 Tech Tool 화면 인식"}
                 <input
                   type="file"
                   accept="image/*"
