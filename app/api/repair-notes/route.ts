@@ -59,14 +59,20 @@ async function buildNoteFields(body: any) {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const requestedLimit = Number(searchParams.get("limit") || "25");
+    const requestedOffset = Number(searchParams.get("offset") || "0");
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 25, 1), 50);
+    const offset = Math.max(Number.isFinite(requestedOffset) ? requestedOffset : 0, 0);
+
     const supabase = getSupabaseAdmin();
     const { data: notesData, error } = await supabase
       .from("repair_notes")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(100);
+      .range(offset, offset + limit - 1);
 
     if (error) throw error;
 
@@ -110,7 +116,14 @@ export async function GET() {
       photos: photosByNote[n.id] || [],
     }));
 
-    return NextResponse.json({ data: withPhotos });
+    return NextResponse.json({
+      data: withPhotos,
+      pagination: {
+        limit,
+        offset,
+        hasMore: notes.length === limit,
+      },
+    });
   } catch (error) {
     console.error("GET /api/repair-notes", error);
     return NextResponse.json(
@@ -212,7 +225,6 @@ export async function DELETE(request: Request) {
 
     const supabase = getSupabaseAdmin();
 
-    // 1. 기록과 Drive 폴더 ID 확인
     const { data: note, error: noteError } = await supabase
       .from("repair_notes")
       .select("id, drive_folder_id")
@@ -226,7 +238,6 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // 2. 연결된 Drive 파일 ID 확인
     const { data: photos, error: photosError } = await supabase
       .from("repair_note_photos")
       .select("id, drive_file_id")
@@ -238,7 +249,6 @@ export async function DELETE(request: Request) {
       .map((photo) => photo.drive_file_id)
       .filter((fileId): fileId is string => Boolean(fileId));
 
-    // 3. Drive OAuth 설정이 있는 경우 사진과 전용 폴더 삭제
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
@@ -259,7 +269,6 @@ export async function DELETE(request: Request) {
 
       const drive = google.drive({ version: "v3", auth });
 
-      // 이미 Drive에서 삭제된 파일(404)은 정상적으로 건너뛴다.
       for (const fileId of driveFileIds) {
         try {
           await drive.files.delete({ fileId });
@@ -270,7 +279,6 @@ export async function DELETE(request: Request) {
         }
       }
 
-      // 사진이 들어 있던 전용 폴더도 삭제
       if (note.drive_folder_id) {
         try {
           await drive.files.delete({ fileId: note.drive_folder_id });
@@ -282,7 +290,6 @@ export async function DELETE(request: Request) {
       }
     }
 
-    // 4. DB 사진 레코드 삭제
     const { error: photoDeleteError } = await supabase
       .from("repair_note_photos")
       .delete()
@@ -290,7 +297,6 @@ export async function DELETE(request: Request) {
 
     if (photoDeleteError) throw photoDeleteError;
 
-    // 5. 정비 기록 삭제
     const { error: noteDeleteError } = await supabase
       .from("repair_notes")
       .delete()
