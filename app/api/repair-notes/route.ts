@@ -34,12 +34,14 @@ async function buildNoteFields(body: any) {
 async function addSignedPhotoUrls(supabase: ReturnType<typeof getSupabaseAdmin>, photos: any[]) {
   const result = [];
   for (const p of photos) {
-    let thumbnailLink = p.thumbnail_link || "";
-    let webViewLink = p.web_view_link || "";
+    let thumbnailLink = "";
+    let webViewLink = "";
     if (p.storage_path) {
-      const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(p.storage_path, PHOTO_URL_SECONDS);
-      if (data?.signedUrl) thumbnailLink = data.signedUrl;
-      if (data?.signedUrl) webViewLink = data.signedUrl;
+      const { data, error } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(p.storage_path, PHOTO_URL_SECONDS);
+      if (!error && data?.signedUrl) {
+        thumbnailLink = data.signedUrl;
+        webViewLink = data.signedUrl;
+      }
     }
     result.push({ id: p.id, thumbnailLink, webViewLink, fileName: p.file_name });
   }
@@ -55,7 +57,7 @@ export async function GET(request: Request) {
     const offset = Math.max(Number.isFinite(requestedOffset) ? requestedOffset : 0, 0);
     const supabase = getSupabaseAdmin();
     const { data: notesData, error } = await supabase.from("repair_notes")
-      .select("id, vehicle_type, model_year, mileage_or_hours, order_id, plate_number, symptom, dtc_codes, inspection, cause, created_at, drive_folder_url")
+      .select("id, vehicle_type, model_year, mileage_or_hours, order_id, plate_number, symptom, dtc_codes, inspection, cause, created_at")
       .order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (error) throw error;
     const notes = notesData || [];
@@ -63,7 +65,7 @@ export async function GET(request: Request) {
     const photosByNote: Record<string, { id: string; thumbnailLink: string; webViewLink: string; fileName: string }[]> = {};
     if (noteIds.length > 0) {
       const { data: photos, error: photoError } = await supabase.from("repair_note_photos")
-        .select("id, repair_note_id, storage_path, thumbnail_link, web_view_link, file_name")
+        .select("id, repair_note_id, storage_path, file_name")
         .in("repair_note_id", noteIds);
       if (!photoError && photos) {
         for (const noteId of noteIds) {
