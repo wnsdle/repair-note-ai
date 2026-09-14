@@ -1,7 +1,6 @@
 import { Note } from "../types";
 
 export default function NoteCard({ note, onEdit, onDelete }: { note: Note; onEdit?: (note: Note) => void; onDelete?: (id: string) => void }) {
-  const folderUrl = note.drive_folder_url || (note.photos && note.photos.length > 0 ? note.photos[0].webViewLink : null);
   return (
     <article className="record">
       <div className="record-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
@@ -22,7 +21,7 @@ export default function NoteCard({ note, onEdit, onDelete }: { note: Note; onEdi
       {note.inspection && <p><strong>점검내용:</strong> {note.inspection}</p>}
       {note.cause && <p><strong>원인:</strong> {note.cause}</p>}
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
-      {folderUrl && <div className="mt-3 pt-2 border-t border-gray-100"><a href={folderUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-semibold transition"><span>📁</span><span>정비 사진 드라이브 폴더 열기</span><span className="text-xs text-blue-500">↗</span></a></div>}
+      {note.photos && note.photos.length > 0 && <div className="mt-3 pt-2 border-t border-gray-100"><span className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg text-sm font-semibold">📷 정비 사진 {note.photos.length}장</span></div>}
     </article>
   );
 }
