@@ -13,7 +13,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        {children}
+        <footer style={{maxWidth:980,margin:"0 auto",padding:"14px 16px 24px",textAlign:"center",color:"#667085",fontSize:12}}>
+          <a href="/privacy" style={{color:"#475467",textDecoration:"none",marginRight:16}}>개인정보처리방침</a>
+          <a href="/terms" style={{color:"#475467",textDecoration:"none"}}>서비스 이용약관</a>
+        </footer>
+      </body>
     </html>
   );
 }
