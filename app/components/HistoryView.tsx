@@ -67,7 +67,10 @@ export default function HistoryView({ notes: initialNotes, loading: initialLoadi
 
   const handleDelete = async (id: string) => {
     await onDelete(id);
-    setNotes((current) => current.filter((note) => note.id !== id));
+    // onDelete performs its own confirmation and API call. Do not optimistically
+    // remove the card here: cancelling the confirmation must leave the record visible.
+    // Reload from the server so the UI reflects the actual database state.
+    await loadPage(0, true);
   };
 
   return <section className="card">
