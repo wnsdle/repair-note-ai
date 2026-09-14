@@ -17,7 +17,6 @@ export type Note = {
   inspection: string;
   cause: string;
   created_at: string;
-  drive_folder_url?: string;
   photos?: Photo[];
   matchType?: "keyword" | "semantic";
 };
