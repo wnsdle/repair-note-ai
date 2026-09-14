@@ -21,7 +21,28 @@ export default function NoteCard({ note, onEdit, onDelete }: { note: Note; onEdi
       {note.inspection && <p><strong>점검내용:</strong> {note.inspection}</p>}
       {note.cause && <p><strong>원인:</strong> {note.cause}</p>}
       {note.order_id && <p className="muted">오더번호: {note.order_id}</p>}
-      {note.photos && note.photos.length > 0 && <div className="mt-3 pt-2 border-t border-gray-100"><span className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg text-sm font-semibold">📷 정비 사진 {note.photos.length}장</span></div>}
+      {note.photos && note.photos.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <strong style={{ fontSize: "13px" }}>📷 정비 사진 {note.photos.length}장</strong>
+            <span className="muted" style={{ fontSize: "11px" }}>사진을 누르면 크게 보기</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: "8px" }}>
+            {note.photos.map((photo) => photo.thumbnailLink && (
+              <button
+                key={photo.id}
+                type="button"
+                title={photo.fileName}
+                onClick={() => window.open(photo.webViewLink || photo.thumbnailLink, "_blank", "noopener,noreferrer")}
+                style={{ padding: 0, border: "1px solid #e5e7eb", borderRadius: "8px", overflow: "hidden", background: "#f8fafc", cursor: "zoom-in", aspectRatio: "1 / 1" }}
+              >
+                <img src={photo.thumbnailLink} alt={photo.fileName} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              </button>
+            ))}
+          </div>
+          {note.photos.some((photo) => !photo.thumbnailLink) && <p className="muted" style={{ marginTop: "6px", fontSize: "11px" }}>일부 사진의 미리보기를 불러오지 못했습니다.</p>}
+        </div>
+      )}
     </article>
   );
 }
