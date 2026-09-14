@@ -8,7 +8,7 @@ type Props = {
   notes: Note[];
   loading: boolean;
   onEdit: (note: Note) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
 };
 
 export default function HistoryView({ notes: initialNotes, loading: initialLoading, onEdit, onDelete }: Props) {
@@ -66,10 +66,9 @@ export default function HistoryView({ notes: initialNotes, loading: initialLoadi
   }, [initialNotes]);
 
   const handleDelete = async (id: string) => {
+    // Wait for confirmation and the DELETE API request to finish before reloading.
+    // This prevents the refresh from racing ahead of a successful deletion.
     await onDelete(id);
-    // onDelete performs its own confirmation and API call. Do not optimistically
-    // remove the card here: cancelling the confirmation must leave the record visible.
-    // Reload from the server so the UI reflects the actual database state.
     await loadPage(0, true);
   };
 
