@@ -1,45 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
+
+export const runtime = "nodejs";
+const BUCKET = "repair-note-photos";
+const SIGNED_URL_SECONDS = 60 * 60;
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const fileId = searchParams.get("fileId");
-
-  if (!fileId) {
-    return new NextResponse("File ID is required", { status: 400 });
-  }
+  const path = new URL(request.url).searchParams.get("path");
+  if (!path) return new NextResponse("Storage path is required", { status: 400 });
 
   try {
-    // 구글 드라이브 다이렉트 썸네일 URL 요청
-    const driveUrl = `https://lh3.googleusercontent.com/d/${fileId}=w400`;
-    const response = await fetch(driveUrl);
-
-    if (!response.ok) {
-      // 2차 예비 URL
-      const fallbackUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
-      const fallbackRes = await fetch(fallbackUrl);
-      if (!fallbackRes.ok) {
-        return new NextResponse("Failed to fetch image", { status: fallbackRes.status });
-      }
-      const buffer = await fallbackRes.arrayBuffer();
-      const contentType = fallbackRes.headers.get("content-type") || "image/jpeg";
-      return new NextResponse(buffer, {
-        headers: {
-          "Content-Type": contentType,
-          "Cache-Control": "public, max-age=86400, s-maxage=86400"
-        }
-      });
-    }
-
-    const buffer = await response.arrayBuffer();
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=86400, s-maxage=86400"
-      }
-    });
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
+    if (error || !data?.signedUrl) return new NextResponse("Failed to create image URL", { status: 404 });
+    return NextResponse.redirect(data.signedUrl);
   } catch (error) {
+    console.error("Photo proxy error:", error);
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
