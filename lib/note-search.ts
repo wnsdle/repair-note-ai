@@ -4,7 +4,20 @@ import { getEmbedding } from "@/lib/gemini-embedding";
 export type SearchedNote = Record<string, any>;
 
 /**
- * 키워드(정확히 일치) 검색 + 임베딩 기반 유사도 검색을 합쳐서 정비 기록을 찾습니다.
+ * PostgREST .or()의 ilike 값은 SQL의 '%' wildcard를 그대로 넣는 것이 아니라
+ * '*' wildcard를 사용합니다. 또한 검색어에 ',', '.', '(', ')' 등이 들어오면
+ * logic-tree 문법으로 해석될 수 있으므로 quoted value로 감쌉니다.
+ */
+function buildIlikePattern(query: string): string {
+  const escaped = query
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+  const safeQuery = escaped.replace(/\*/g, "\\*");
+  return `"*${safeQuery}*"`;
+}
+
+/**
+ * 키워드 검색 + 임베딩 기반 의미 검색을 합쳐서 정비 기록을 찾습니다.
  * search/route.ts 와 diagnose/route.ts 에서 공통으로 사용합니다.
  */
 export async function searchInternalNotes(
@@ -12,8 +25,7 @@ export async function searchInternalNotes(
   opts?: { limit?: number }
 ): Promise<SearchedNote[]> {
   const supabase = getSupabaseAdmin();
-  const escaped = query.replace(/[%_]/g, (c: string) => `\\${c}`);
-  const pattern = `%${escaped}%`;
+  const pattern = buildIlikePattern(query);
 
   const { data: keywordData, error: keywordError } = await supabase
     .from("repair_notes")
@@ -41,7 +53,6 @@ export async function searchInternalNotes(
   const keywordIds = new Set(keywordResults.map((n) => n.id));
 
   let semanticResults: SearchedNote[] = [];
-  // 검색어이므로 RETRIEVAL_QUERY 방식으로 임베딩합니다.
   const queryEmbedding = await getEmbedding(query, "RETRIEVAL_QUERY");
 
   if (queryEmbedding) {
@@ -50,8 +61,6 @@ export async function searchInternalNotes(
       {
         query_embedding: queryEmbedding,
         match_count: 20
-        // 💡 match_threshold는 일부러 안 보내고, Supabase 함수의 기본값(현재 0.65)을 따릅니다.
-        //    임계값을 조정하고 싶으면 DB의 match_repair_notes 함수 기본값만 바꾸면 됩니다.
       }
     );
 
