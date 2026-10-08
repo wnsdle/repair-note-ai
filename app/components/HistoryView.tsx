@@ -8,7 +8,7 @@ type Props = {
   notes: Note[];
   loading: boolean;
   onEdit: (note: Note) => void;
-  onDelete: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<boolean>;
 };
 
 export default function HistoryView({ notes: initialNotes, loading: initialLoading, onEdit, onDelete }: Props) {
